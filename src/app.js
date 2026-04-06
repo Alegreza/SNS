@@ -52,6 +52,9 @@
     if (!token) return Promise.resolve(false);
     return apiCall("/auth/me").then(function (user) {
       loginFromApiUser(user);
+      return Promise.all([loadSpaces(), loadFeed()]);
+    }).then(function () {
+      startNotifPolling();
       return true;
     }).catch(function () {
       localStorage.removeItem("kobe_token");
@@ -65,21 +68,49 @@
     "Anonymous / Vent": { studentOnly: true }
   };
 
-  const spaces = [
-    { id: "grade-9", type: "class", name: "Grade 9", grade: "9", sections: ["Announcements & Assignments", "Questions", "Anonymous / Vent"] },
-    { id: "grade-10", type: "class", name: "Grade 10", grade: "10", sections: ["Announcements & Assignments", "Questions", "Anonymous / Vent"] },
-    { id: "grade-11", type: "class", name: "Grade 11", grade: "11", sections: ["Announcements & Assignments", "Questions", "Anonymous / Vent"] },
-    { id: "grade-12", type: "class", name: "Grade 12", grade: "12", sections: ["Announcements & Assignments", "Questions", "Anonymous / Vent"] },
-    { id: "subject-9-math1", type: "subject", name: "Math I (Grade 9)", grade: "9", sections: ["Announcements & Assignments", "Questions", "Anonymous / Vent"] },
-    { id: "club-band", type: "club", name: "Band Club", grade: null, sections: ["Announcements & Assignments", "Questions", "Anonymous / Vent"] }
-  ];
+  const ALL_SECTIONS = ["Announcements & Assignments", "Questions", "Anonymous / Vent"];
 
-  let postIdSeq = 4;
-  const posts = [
-    { id: 1, spaceId: "grade-9", section: "Announcements & Assignments", title: "Midterm exam scope", content: "Scope for Korean, Math, English will be announced next Monday.", authorName: "Homeroom Teacher", authorRole: "teacher", isAnonymous: false, createdAt: new Date().toISOString() },
-    { id: 2, spaceId: "subject-9-math1", section: "Questions", title: "Hint for problem 3 in differential applications?", content: "Stuck on problem 3, p.132. Any tips to get started?", authorName: "Grade 9 Student", authorRole: "student", isAnonymous: false, createdAt: new Date().toISOString() },
-    { id: 3, spaceId: "club-band", section: "Anonymous / Vent", title: "So nervous before the concert", content: "My hands shake on stage. How do you deal with stage fright?", authorName: "Anonymous", authorRole: "student", isAnonymous: true, createdAt: new Date().toISOString() }
-  ];
+  // Cache loaded from API
+  let spaces = [];
+  let posts = [];   // posts for current space/section
+  let homeFeed = []; // posts for home tab
+
+  function loadSpaces() {
+    return apiCall("/spaces").then(function (data) {
+      spaces = data.map(function (s) {
+        return Object.assign({ sections: ALL_SECTIONS }, s);
+      });
+    }).catch(function () {});
+  }
+
+  function loadPosts(spaceId, section) {
+    var path = "/posts?spaceId=" + encodeURIComponent(spaceId);
+    if (section) path += "&section=" + encodeURIComponent(section);
+    return apiCall(path).then(function (data) {
+      posts = data.map(normalizePost);
+    }).catch(function () { posts = []; });
+  }
+
+  function loadFeed() {
+    return apiCall("/posts/feed").then(function (data) {
+      homeFeed = data.map(normalizePost);
+    }).catch(function () { homeFeed = []; });
+  }
+
+  // Normalize server snake_case to camelCase for rendering
+  function normalizePost(p) {
+    return {
+      id: p.id,
+      spaceId: p.space_id,
+      section: p.section,
+      title: p.title,
+      content: p.content,
+      authorName: p.author_name,
+      authorRole: p.author_role,
+      isAnonymous: !!p.is_anonymous,
+      createdAt: p.created_at
+    };
+  }
 
   const schedules = {
     "9": { todaySubjects: [{ period: 1, subject: "Korean" }, { period: 2, subject: "Math I" }, { period: 3, subject: "English" }, { period: 4, subject: "History" }, { period: 5, subject: "Science" }, { period: 6, subject: "Club" }], upcomingEvents: [{ dateLabel: "Next Mon", title: "Midterm schedule released" }, { dateLabel: "Oct 12 (Sat)", title: "School festival & Band concert" }] },
@@ -120,55 +151,38 @@
   }
 
   function createPost(payload) {
-    if (!canUserPostInSection(payload.section)) return null;
-    const timestamp = new Date().toISOString();
-    const visibleName = payload.isAnonymous ? "Anonymous" : (userState.name || "Student");
-    const post = {
-      id: postIdSeq++,
-      spaceId: payload.spaceId,
-      section: payload.section,
-      title: payload.title,
-      content: payload.content,
-      authorName: visibleName,
-      authorRole: userState.role || "student",
-      isAnonymous: payload.isAnonymous,
-      createdAt: timestamp
-    };
-    posts.unshift(post);
-    return post;
+    return apiCall("/posts", {
+      method: "POST",
+      body: {
+        spaceId: payload.spaceId,
+        section: payload.section,
+        title: payload.title,
+        content: payload.content,
+        isAnonymous: payload.isAnonymous
+      }
+    }).then(function (post) {
+      var normalized = normalizePost(post);
+      posts.unshift(normalized);
+      homeFeed.unshift(normalized);
+      return normalized;
+    });
   }
 
   function getSpacesForUser() {
-    if (!userState.isAuthenticated) return [];
-    if (userState.role === "admin") return spaces;
-    return spaces.filter(function (space) {
-      if (space.type === "class" || space.type === "subject")
-        return space.grade === userState.grade;
-      if (space.type === "club") return true;
-      return false;
-    });
+    return spaces;
   }
 
-  function getPostsForSpace(spaceId, section) {
-    return posts.filter(function (p) {
-      if (p.spaceId !== spaceId) return false;
-      if (section && p.section !== section) return false;
-      return true;
-    });
+  function getPostsForSpace() {
+    return posts;
   }
 
   function getHomeFeed() {
-    const ids = {};
-    getSpacesForUser().forEach(function (s) { ids[s.id] = true; });
-    return posts.filter(function (p) { return ids[p.spaceId]; }).slice(0, 10);
+    return homeFeed;
   }
 
   function getQuestionAndConcernFeed() {
-    const ids = {};
-    getSpacesForUser().forEach(function (s) { ids[s.id] = true; });
-    return posts.filter(function (p) {
-      if ((p.section !== "Questions" && p.section !== "Anonymous / Vent") || !userState.isAuthenticated) return false;
-      return ids[p.spaceId];
+    return homeFeed.filter(function (p) {
+      return p.section === "Questions" || p.section === "Anonymous / Vent";
     });
   }
 
@@ -184,12 +198,19 @@
     activeSpaceId: null,
     activeSection: "Announcements & Assignments",
     notifications: [],
+    unreadCount: 0,
     pendingMsAccount: null,
     msalInstance: null,
     useDevForm: false,
     authScreen: "choose",
-    authProvider: null
+    authProvider: null,
+    adminFilter: "all",
+    adminUsers: [],
+    expandedComments: {},   // postId -> true/false
+    commentsByPost: {}      // postId -> comment[]
   };
+
+  let notifPollTimer = null;
 
   function pushNotification(msg) {
     const t = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -197,21 +218,93 @@
     if (appViewState.notifications.length > 20) appViewState.notifications.pop();
   }
 
+  function loadNotifications() {
+    return apiCall("/notifications").then(function (data) {
+      appViewState.notifications = data;
+      appViewState.unreadCount = data.filter(function (n) { return !n.is_read; }).length;
+    }).catch(function () {});
+  }
+
+  function markNotificationRead(id) {
+    return apiCall("/notifications/" + id + "/read", { method: "PATCH" }).then(function () {
+      appViewState.notifications.forEach(function (n) {
+        if (n.id === id) n.is_read = 1;
+      });
+      appViewState.unreadCount = appViewState.notifications.filter(function (n) { return !n.is_read; }).length;
+    }).catch(function () {});
+  }
+
+  function markAllNotificationsRead() {
+    return apiCall("/notifications/read-all", { method: "PATCH" }).then(function () {
+      appViewState.notifications.forEach(function (n) { n.is_read = 1; });
+      appViewState.unreadCount = 0;
+    }).catch(function () {});
+  }
+
+  function startNotifPolling() {
+    if (notifPollTimer) return;
+    loadNotifications().then(render);
+    notifPollTimer = setInterval(function () {
+      if (!userState.isAuthenticated) return stopNotifPolling();
+      loadNotifications().then(function () {
+        // Re-render the tab badge without full re-render
+        var badge = document.querySelector(".notif-badge");
+        if (badge) {
+          badge.textContent = appViewState.unreadCount > 0 ? String(appViewState.unreadCount) : "";
+          badge.style.display = appViewState.unreadCount > 0 ? "inline-block" : "none";
+        }
+      });
+    }, 15000);
+  }
+
+  function stopNotifPolling() {
+    if (notifPollTimer) { clearInterval(notifPollTimer); notifPollTimer = null; }
+  }
+
+  function loadComments(postId) {
+    return apiCall("/posts/" + postId + "/comments").then(function (data) {
+      appViewState.commentsByPost[postId] = data;
+    }).catch(function () { appViewState.commentsByPost[postId] = []; });
+  }
+
+  function submitComment(postId, content, isAnonymous, onDone) {
+    return apiCall("/posts/" + postId + "/comments", {
+      method: "POST",
+      body: { content: content, isAnonymous: isAnonymous }
+    }).then(function (comment) {
+      if (!appViewState.commentsByPost[postId]) appViewState.commentsByPost[postId] = [];
+      appViewState.commentsByPost[postId].push(comment);
+      if (onDone) onDone();
+    }).catch(function (e) {
+      alert(e.message || "Failed to post comment");
+    });
+  }
+
   function setActiveTab(tab) {
     appViewState.activeTab = tab;
-    render();
+    if (tab === "notifications") {
+      loadNotifications().then(render);
+    } else {
+      render();
+    }
   }
 
   function setActiveSpace(spaceId) {
     appViewState.activeSpaceId = spaceId;
     appViewState.activeSection = "Announcements & Assignments";
     appViewState.activeTab = "spaces";
+    posts = [];
     render();
+    loadPosts(spaceId, appViewState.activeSection).then(render);
   }
 
   function setActiveSection(section) {
     appViewState.activeSection = section;
+    posts = [];
     render();
+    if (appViewState.activeSpaceId) {
+      loadPosts(appViewState.activeSpaceId, section).then(render);
+    }
   }
 
   function handleLoginSubmit(ev) {
@@ -231,8 +324,11 @@
         loginFromApiUser(res.user);
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
+        return Promise.all([loadSpaces(), loadFeed()]);
+      }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
+        startNotifPolling();
         render();
       })
       .catch(function (e) {
@@ -289,6 +385,8 @@
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
         if (res.message) pushNotification(res.message);
+        return Promise.all([loadSpaces(), loadFeed()]);
+      }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
         render();
@@ -348,8 +446,11 @@
           loginFromApiUser(res.user);
           appViewState.authScreen = "choose";
           appViewState.activeTab = "home";
+          return Promise.all([loadSpaces(), loadFeed()]);
+        }).then(function () {
           var ds = getSpacesForUser()[0];
           appViewState.activeSpaceId = ds ? ds.id : null;
+          startNotifPolling();
           render();
         })
         .catch(function (e) {
@@ -417,8 +518,11 @@
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
         if (res.message) pushNotification(res.message);
+        return Promise.all([loadSpaces(), loadFeed()]);
+      }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
+        startNotifPolling();
         render();
       })
       .catch(function (e) {
@@ -427,11 +531,15 @@
   }
 
   function handleLogoutClick() {
+    stopNotifPolling();
     logout();
     appViewState.pendingMsAccount = null;
     appViewState.activeTab = "home";
     appViewState.activeSpaceId = null;
     appViewState.notifications = [];
+    appViewState.unreadCount = 0;
+    appViewState.expandedComments = {};
+    appViewState.commentsByPost = {};
     render();
   }
 
@@ -455,19 +563,111 @@
       return;
     }
 
-    var post = createPost({
+    createPost({
       spaceId: appViewState.activeSpaceId,
       section: appViewState.activeSection,
       title: title,
       content: content,
       isAnonymous: isAnonymous
-    });
-
-    if (post) {
+    }).then(function (post) {
       pushNotification("New post: [" + post.section + "] " + post.title);
       f.reset();
+      render();
+    }).catch(function (e) {
+      alert(e.message || "Failed to create post");
+    });
+  }
+
+  function renderPostCard(post, opts) {
+    // opts: { showSpace: bool, spaceLabel: string }
+    opts = opts || {};
+    var pc = el("article", "post-card");
+    if (opts.showSpace) {
+      var meta = el("div", "post-meta");
+      meta.textContent = (opts.spaceLabel || "Space") + " \xB7 " + post.section;
+      pc.appendChild(meta);
+    } else {
+      var meta2 = el("div", "post-meta");
+      meta2.textContent = post.section;
+      pc.appendChild(meta2);
     }
-    render();
+    var pt = el("h3");
+    pt.textContent = post.title;
+    var ex = el("p", "post-excerpt");
+    ex.textContent = post.content.length > 100 ? post.content.slice(0, 100) + "..." : post.content;
+    var au = el("div", "post-author");
+    au.textContent = post.authorName + " \xB7 " + new Date(post.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    pc.appendChild(pt);
+    pc.appendChild(ex);
+    pc.appendChild(au);
+
+    // Comment toggle button
+    var commentComments = appViewState.commentsByPost[post.id] || [];
+    var expanded = !!appViewState.expandedComments[post.id];
+    var toggleBtn = el("button", "comment-toggle-btn");
+    toggleBtn.textContent = "\uD83D\uDCAC " + commentComments.length + " comment" + (commentComments.length !== 1 ? "s" : "");
+    toggleBtn.addEventListener("click", function () {
+      appViewState.expandedComments[post.id] = !appViewState.expandedComments[post.id];
+      if (appViewState.expandedComments[post.id] && !appViewState.commentsByPost[post.id]) {
+        loadComments(post.id).then(function () { render(); });
+        return;
+      }
+      render();
+    });
+    pc.appendChild(toggleBtn);
+
+    if (expanded) {
+      var commentSection = el("div", "comment-section");
+
+      if (commentComments.length > 0) {
+        commentComments.forEach(function (c) {
+          var ci = el("div", "comment-item");
+          var ca = el("span", "comment-author");
+          ca.textContent = c.author_name + " \xB7 ";
+          var ct = el("span", "comment-text");
+          ct.textContent = c.content;
+          var cd = el("span", "comment-date");
+          cd.textContent = " \xB7 " + new Date(c.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+          ci.appendChild(ca);
+          ci.appendChild(ct);
+          ci.appendChild(cd);
+          commentSection.appendChild(ci);
+        });
+      } else {
+        var noC = el("p", "muted");
+        noC.style.fontSize = "0.85rem";
+        noC.textContent = "No comments yet.";
+        commentSection.appendChild(noC);
+      }
+
+      // Comment form
+      if (userState.isAuthenticated) {
+        var cForm = el("form", "comment-form");
+        var isAnonSection = post.section === "Anonymous / Vent";
+        cForm.innerHTML =
+          '<textarea name="content" rows="2" placeholder="Write a comment\u2026" required></textarea>' +
+          (isAnonSection ? '<label class="checkbox-inline"><input type="checkbox" name="isAnonymous" checked /> Anonymous</label>' : '') +
+          '<button type="submit" class="primary-button small">Reply</button>';
+        cForm.addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var content = (cForm.content && cForm.content.value || "").trim();
+          var isAnon = cForm.isAnonymous ? cForm.isAnonymous.checked : false;
+          if (!content) return;
+          var btn = cForm.querySelector("button[type=submit]");
+          btn.disabled = true;
+          submitComment(post.id, content, isAnon, function () {
+            cForm.reset();
+            btn.disabled = false;
+            render();
+          });
+        });
+        commentSection.appendChild(cForm);
+      }
+
+      pc.appendChild(commentSection);
+    }
+
+    return pc;
   }
 
   function clearRoot() {
@@ -518,9 +718,15 @@
   function renderTabs(container) {
     var nav = el("nav", "tab-nav");
     var tabs = [{ id: "home", label: "Home" }, { id: "spaces", label: "Spaces" }, { id: "questions", label: "Questions & Concerns" }, { id: "notifications", label: "Notifications" }, { id: "profile", label: "Profile" }];
+    if (userState.role === "admin") tabs.push({ id: "admin", label: "Admin" });
     tabs.forEach(function (tab) {
       var btn = el("button", "tab-button" + (appViewState.activeTab === tab.id ? " active" : ""));
       btn.textContent = tab.label;
+      if (tab.id === "notifications" && appViewState.unreadCount > 0) {
+        var badge = el("span", "notif-badge");
+        badge.textContent = String(appViewState.unreadCount);
+        btn.appendChild(badge);
+      }
       btn.addEventListener("click", function () { setActiveTab(tab.id); });
       nav.appendChild(btn);
     });
@@ -724,21 +930,8 @@
     } else {
       var fl = el("div", "post-list");
       feed.forEach(function (post) {
-        var pc = el("article", "post-card");
         var sn = spaces.filter(function (s) { return s.id === post.spaceId; })[0];
-        var meta = el("div", "post-meta");
-        meta.textContent = (sn ? sn.name : "Space") + " · " + post.section;
-        var pt = el("h3");
-        pt.textContent = post.title;
-        var ex = el("p", "post-excerpt");
-        ex.textContent = post.content.length > 80 ? post.content.slice(0, 80) + "..." : post.content;
-        var au = el("div", "post-author");
-        au.textContent = post.authorName + " · " + new Date(post.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-        pc.appendChild(meta);
-        pc.appendChild(pt);
-        pc.appendChild(ex);
-        pc.appendChild(au);
-        fl.appendChild(pc);
+        fl.appendChild(renderPostCard(post, { showSpace: true, spaceLabel: sn ? sn.name : "Space" }));
       });
       feedCard.appendChild(fl);
     }
@@ -828,20 +1021,7 @@
       } else {
         var pl = el("div", "post-list");
         postsInSpace.forEach(function (post) {
-          var pc = el("article", "post-card");
-          var m = el("div", "post-meta");
-          m.textContent = post.section;
-          var t = el("h3");
-          t.textContent = post.title;
-          var e = el("p", "post-excerpt");
-          e.textContent = post.content.length > 100 ? post.content.slice(0, 100) + "..." : post.content;
-          var a = el("div", "post-author");
-          a.textContent = post.authorName + " · " + new Date(post.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-          pc.appendChild(m);
-          pc.appendChild(t);
-          pc.appendChild(e);
-          pc.appendChild(a);
-          pl.appendChild(pc);
+          pl.appendChild(renderPostCard(post, { showSpace: false }));
         });
         postCard.appendChild(pl);
       }
@@ -869,21 +1049,8 @@
     } else {
       var list = el("div", "post-list");
       feed.forEach(function (post) {
-        var item = el("article", "post-card");
         var sn = spaces.filter(function (s) { return s.id === post.spaceId; })[0];
-        var meta = el("div", "post-meta");
-        meta.textContent = (sn ? sn.name : "Space") + " · " + post.section;
-        var h3 = el("h3");
-        h3.textContent = post.title;
-        var ex = el("p", "post-excerpt");
-        ex.textContent = post.content.length > 120 ? post.content.slice(0, 120) + "..." : post.content;
-        var au = el("div", "post-author");
-        au.textContent = post.authorName + " · " + new Date(post.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-        item.appendChild(meta);
-        item.appendChild(h3);
-        item.appendChild(ex);
-        item.appendChild(au);
-        list.appendChild(item);
+        list.appendChild(renderPostCard(post, { showSpace: true, spaceLabel: sn ? sn.name : "Space" }));
       });
       card.appendChild(list);
     }
@@ -892,18 +1059,43 @@
 
   function renderNotifications(container) {
     var card = el("section", "card");
+    var header = el("div", "notif-header");
     var t = el("h2");
     t.textContent = "Notifications";
-    card.appendChild(t);
-    if (appViewState.notifications.length === 0) {
+    header.appendChild(t);
+    if (appViewState.notifications.some(function (n) { return !n.is_read; })) {
+      var markAllBtn = el("button", "ghost-button small");
+      markAllBtn.textContent = "Mark all read";
+      markAllBtn.addEventListener("click", function () {
+        markAllNotificationsRead().then(render);
+      });
+      header.appendChild(markAllBtn);
+    }
+    card.appendChild(header);
+
+    var notifs = appViewState.notifications;
+    if (notifs.length === 0) {
       var p = el("p", "muted");
       p.textContent = "No notifications yet.";
       card.appendChild(p);
     } else {
       var ul = el("ul", "notification-list");
-      appViewState.notifications.forEach(function (n) {
-        var li = document.createElement("li");
-        li.textContent = "[" + n.timestamp + "] " + n.message;
+      notifs.forEach(function (n) {
+        var li = el("li", "notif-item" + (n.is_read ? "" : " notif-unread"));
+        var msg = el("span", "notif-message");
+        msg.textContent = n.message;
+        var ts = el("span", "notif-time");
+        ts.textContent = new Date(n.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        li.appendChild(msg);
+        li.appendChild(ts);
+        if (!n.is_read) {
+          var readBtn = el("button", "ghost-button tiny");
+          readBtn.textContent = "Mark read";
+          readBtn.addEventListener("click", function () {
+            markNotificationRead(n.id).then(render);
+          });
+          li.appendChild(readBtn);
+        }
         ul.appendChild(li);
       });
       card.appendChild(ul);
@@ -934,12 +1126,142 @@
         info.appendChild(dd);
       });
       card.appendChild(info);
+
+      // Verification status badge
+      if (userState.role !== "admin") {
+        var statusMap = {
+          pending:  { label: "Pending verification", cls: "badge-pending" },
+          approved: { label: "Verified",             cls: "badge-approved" },
+          rejected: { label: "Rejected",             cls: "badge-rejected" }
+        };
+        var vs = userState.verification_status || "pending";
+        var sm = statusMap[vs] || statusMap["pending"];
+        var badge = el("span", "verification-badge " + sm.cls);
+        badge.textContent = sm.label;
+        card.appendChild(badge);
+      }
+
       var lb = el("button", "ghost-button");
       lb.textContent = "Sign out";
+      lb.style.marginTop = "1rem";
       lb.addEventListener("click", handleLogoutClick);
       card.appendChild(lb);
     }
     container.appendChild(card);
+  }
+
+  function renderAdmin(container) {
+    var card = el("section", "card");
+    var t = el("h2");
+    t.textContent = "Admin — User Verification";
+    card.appendChild(t);
+
+    var filterWrap = el("div", "admin-filter");
+    ["all", "pending", "approved", "rejected"].forEach(function (status) {
+      var btn = el("button", "tab-button" + (appViewState.adminFilter === status ? " active" : ""));
+      btn.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+      btn.addEventListener("click", function () {
+        appViewState.adminFilter = status;
+        loadAdminUsers().then(render);
+      });
+      filterWrap.appendChild(btn);
+    });
+    card.appendChild(filterWrap);
+
+    var tableWrap = el("div", "admin-table-wrap");
+    var loading = el("p", "muted");
+    loading.textContent = "Loading…";
+    tableWrap.appendChild(loading);
+    card.appendChild(tableWrap);
+    container.appendChild(card);
+
+    // Load users and populate table
+    loadAdminUsers().then(function () {
+      while (tableWrap.firstChild) tableWrap.removeChild(tableWrap.firstChild);
+      if (appViewState.adminUsers.length === 0) {
+        var emp = el("p", "muted");
+        emp.textContent = "No users found.";
+        tableWrap.appendChild(emp);
+        return;
+      }
+      var table = el("table", "admin-table");
+      var thead = document.createElement("thead");
+      thead.innerHTML = "<tr><th>Name</th><th>Email</th><th>Role</th><th>Grade</th><th>Method</th><th>Status</th><th>Actions</th></tr>";
+      table.appendChild(thead);
+      var tbody = document.createElement("tbody");
+      appViewState.adminUsers.forEach(function (u) {
+        var tr = document.createElement("tr");
+        tr.id = "admin-user-row-" + u.id;
+        var statusCls = u.verification_status === "approved" ? "badge-approved" : (u.verification_status === "rejected" ? "badge-rejected" : "badge-pending");
+        tr.innerHTML =
+          "<td>" + esc(u.name) + "</td>" +
+          "<td>" + esc(u.email) + "</td>" +
+          "<td>" + esc(u.role) + "</td>" +
+          "<td>" + esc(u.grade || "—") + "</td>" +
+          "<td>" + esc(u.verification_method) + "</td>" +
+          '<td><span class="verification-badge ' + statusCls + '">' + esc(u.verification_status) + "</span></td>" +
+          "<td></td>";
+        var actionCell = tr.cells[6];
+        if (u.verification_status !== "approved") {
+          var approveBtn = el("button", "primary-button admin-action-btn");
+          approveBtn.textContent = "Approve";
+          approveBtn.addEventListener("click", function () { handleAdminVerify(u.id, "approved", tr); });
+          actionCell.appendChild(approveBtn);
+        }
+        if (u.verification_status !== "rejected") {
+          var rejectBtn = el("button", "ghost-button admin-action-btn");
+          rejectBtn.textContent = "Reject";
+          rejectBtn.addEventListener("click", function () { handleAdminVerify(u.id, "rejected", tr); });
+          actionCell.appendChild(rejectBtn);
+        }
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+    });
+  }
+
+  function loadAdminUsers() {
+    var filter = appViewState.adminFilter || "all";
+    return apiCall("/admin/users?status=" + encodeURIComponent(filter)).then(function (users) {
+      appViewState.adminUsers = users;
+    }).catch(function () { appViewState.adminUsers = []; });
+  }
+
+  function handleAdminVerify(userId, status, tr) {
+    // Disable all action buttons in this row while request is in flight
+    var btns = tr.cells[6].querySelectorAll("button");
+    btns.forEach(function (b) { b.disabled = true; });
+
+    apiCall("/admin/users/" + userId + "/verify", { method: "PATCH", body: { status: status } })
+      .then(function () {
+        // Update just this row's status cell and action cell
+        var statusCls = status === "approved" ? "badge-approved" : "badge-rejected";
+        tr.cells[5].innerHTML = '<span class="verification-badge ' + statusCls + '">' + esc(status) + "</span>";
+        var actionCell = tr.cells[6];
+        while (actionCell.firstChild) actionCell.removeChild(actionCell.firstChild);
+        if (status !== "approved") {
+          var approveBtn = el("button", "primary-button admin-action-btn");
+          approveBtn.textContent = "Approve";
+          approveBtn.addEventListener("click", function () { handleAdminVerify(userId, "approved", tr); });
+          actionCell.appendChild(approveBtn);
+        }
+        if (status !== "rejected") {
+          var rejectBtn = el("button", "ghost-button admin-action-btn");
+          rejectBtn.textContent = "Reject";
+          rejectBtn.addEventListener("click", function () { handleAdminVerify(userId, "rejected", tr); });
+          actionCell.appendChild(rejectBtn);
+        }
+        // Update cached list too
+        if (appViewState.adminUsers) {
+          var u = appViewState.adminUsers.filter(function (u) { return u.id === userId; })[0];
+          if (u) u.verification_status = status;
+        }
+      })
+      .catch(function (e) {
+        btns.forEach(function (b) { b.disabled = false; });
+        alert(e.message || "Failed to update status");
+      });
   }
 
   function render() {
@@ -958,6 +1280,7 @@
         case "questions": renderQuestions(content); break;
         case "notifications": renderNotifications(content); break;
         case "profile": renderProfile(content); break;
+        case "admin": renderAdmin(content); break;
         default: renderHome(content);
       }
       wrapper.appendChild(content);

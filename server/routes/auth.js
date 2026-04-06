@@ -9,7 +9,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { OAuth2Client } = require("google-auth-library");
-const { db } = require("../db");
+const { pool, queryOne } = require("../db");
 const config = require("../config");
 const { auth } = require("../middleware/auth");
 
@@ -31,11 +31,11 @@ const storage = multer.diskStorage({
     cb(null, `student_id_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 function signToken(user) {
   return jwt.sign(
-    { userId: user.id, email: user.email },
+    { userId: user.id, id: user.id, email: user.email, role: user.role, grade: user.grade, name: user.name },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn }
   );
@@ -65,59 +65,51 @@ router.post("/signup", upload.single("student_id"), async (req, res) => {
     if (!email || !password || !name || !role || !verification_method) {
       return res.status(400).json({ error: "Missing required fields: email, password, name, role, verification_method" });
     }
-
     if (!["manual", "student_id", "school_sso"].includes(verification_method)) {
       return res.status(400).json({ error: "Invalid verification_method" });
     }
-
     if (verification_method === "student_id" && !req.file) {
       return res.status(400).json({ error: "Student ID photo required" });
     }
 
-    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email.trim().toLowerCase());
-    if (existing) {
-      return res.status(409).json({ error: "Email already registered" });
-    }
+    const existing = await queryOne("SELECT id FROM users WHERE email = $1", [email.trim().toLowerCase()]);
+    if (existing) return res.status(409).json({ error: "Email already registered" });
+
     if (usernameVal) {
-      const existingUser = db.prepare("SELECT id FROM users WHERE LOWER(username) = LOWER(?)").get(usernameVal);
-      if (existingUser) {
-        return res.status(409).json({ error: "Username already taken" });
-      }
+      const existingUser = await queryOne("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [usernameVal]);
+      if (existingUser) return res.status(409).json({ error: "Username already taken" });
     }
 
     const hash = await bcrypt.hash(password, 10);
 
-    const insert = db.prepare(`
-      INSERT INTO users (email, username, name, password_hash, school_email, role, grade, verification_method)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const info = insert.run(
-      email.trim().toLowerCase(),
-      usernameVal || null,
-      name.trim(),
-      hash,
-      school_email ? school_email.trim().toLowerCase() : null,
-      role,
-      grade || null,
-      verification_method
+    const result = await pool.query(
+      `INSERT INTO users (email, username, name, password_hash, school_email, role, grade, verification_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [
+        email.trim().toLowerCase(),
+        usernameVal || null,
+        name.trim(),
+        hash,
+        school_email ? school_email.trim().toLowerCase() : null,
+        role,
+        grade || null,
+        verification_method
+      ]
     );
-
-    const userId = info.lastInsertRowid;
+    const user = result.rows[0];
 
     if (req.file) {
-      db.prepare(`
-        INSERT INTO uploads (user_id, type, filename, path) VALUES (?, 'student_id', ?, ?)
-      `).run(userId, req.file.filename, req.file.path);
+      await pool.query(
+        "INSERT INTO uploads (user_id, type, filename, path) VALUES ($1, 'student_id', $2, $3)",
+        [user.id, req.file.filename, req.file.path]
+      );
     }
+    await pool.query(
+      "INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES ($1, 'email', $2)",
+      [user.id, email.trim().toLowerCase()]
+    );
 
-    db.prepare(`
-      INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES (?, 'email', ?)
-    `).run(userId, email.trim().toLowerCase());
-
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
     const token = signToken(user);
-
     res.status(201).json({
       user: userResponse(user),
       token,
@@ -141,24 +133,18 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Email or username and password required" });
     }
 
-    const user = db.prepare(
-      "SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR (username IS NOT NULL AND LOWER(username) = LOWER(?))"
-    ).get(identifier, identifier);
+    const user = await queryOne(
+      "SELECT * FROM users WHERE LOWER(email) = LOWER($1) OR (username IS NOT NULL AND LOWER(username) = LOWER($1))",
+      [identifier]
+    );
     if (!user || !user.password_hash) {
       return res.status(401).json({ error: "Invalid email/username or password" });
     }
 
     const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) {
-      return res.status(401).json({ error: "Invalid email or password" });
-    }
+    if (!ok) return res.status(401).json({ error: "Invalid email or password" });
 
-    const token = signToken(user);
-
-    res.json({
-      user: userResponse(user),
-      token
-    });
+    res.json({ user: userResponse(user), token: signToken(user) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Login failed" });
@@ -170,13 +156,8 @@ router.post("/google", upload.single("student_id"), async (req, res) => {
   try {
     const { id_token, name, username, school_email, role, grade, verification_method } = req.body || {};
 
-    if (!id_token) {
-      return res.status(400).json({ error: "id_token required" });
-    }
-
-    if (!config.googleClientId) {
-      return res.status(503).json({ error: "Google sign-in not configured" });
-    }
+    if (!id_token) return res.status(400).json({ error: "id_token required" });
+    if (!config.googleClientId) return res.status(503).json({ error: "Google sign-in not configured" });
 
     const client = new OAuth2Client(config.googleClientId);
     const ticket = await client.verifyIdToken({ idToken: id_token, audience: config.googleClientId });
@@ -184,70 +165,58 @@ router.post("/google", upload.single("student_id"), async (req, res) => {
     const email = (payload.email || "").toLowerCase();
     const googleId = payload.sub;
 
-    if (!email) {
-      return res.status(400).json({ error: "Email not provided by Google" });
-    }
+    if (!email) return res.status(400).json({ error: "Email not provided by Google" });
 
-    let user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    let user = await queryOne("SELECT * FROM users WHERE email = $1", [email]);
 
     if (user) {
-      // Existing user: link provider if not already
-      const hasProvider = db.prepare("SELECT id FROM user_providers WHERE user_id = ? AND provider = 'google'").get(user.id);
+      const hasProvider = await queryOne(
+        "SELECT id FROM user_providers WHERE user_id = $1 AND provider = 'google'", [user.id]
+      );
       if (!hasProvider) {
-        db.prepare("INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES (?, 'google', ?)").run(user.id, googleId);
+        await pool.query(
+          "INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES ($1, 'google', $2)",
+          [user.id, googleId]
+        );
       }
-      const token = signToken(user);
-      return res.json({ user: userResponse(user), token });
+      return res.json({ user: userResponse(user), token: signToken(user) });
     }
 
-    // New user: must provide profile
     if (!name || !role || !verification_method) {
-      return res.status(400).json({
-        error: "New user: provide name, role, verification_method",
-        email,
-        name_from_google: payload.name
-      });
+      return res.status(400).json({ error: "New user: provide name, role, verification_method", email, name_from_google: payload.name });
     }
-
     if (verification_method === "student_id" && !req.file) {
       return res.status(400).json({ error: "Student ID photo required" });
     }
 
     const usernameVal = username ? String(username).trim() : null;
     if (usernameVal) {
-      const existingUser = db.prepare("SELECT id FROM users WHERE LOWER(username) = LOWER(?)").get(usernameVal);
-      if (existingUser) {
-        return res.status(409).json({ error: "Username already taken" });
-      }
+      const existingUser = await queryOne("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [usernameVal]);
+      if (existingUser) return res.status(409).json({ error: "Username already taken" });
     }
 
-    const insert = db.prepare(`
-      INSERT INTO users (email, username, name, password_hash, school_email, role, grade, verification_method)
-      VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
-    `);
-    const info = insert.run(
-      email,
-      usernameVal || null,
-      (name || payload.name || "User").trim(),
-      school_email ? school_email.trim().toLowerCase() : null,
-      role,
-      grade || null,
-      verification_method
+    const result = await pool.query(
+      `INSERT INTO users (email, username, name, school_email, role, grade, verification_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [email, usernameVal || null, (name || payload.name || "User").trim(),
+       school_email ? school_email.trim().toLowerCase() : null, role, grade || null, verification_method]
     );
-    const userId = info.lastInsertRowid;
+    user = result.rows[0];
 
-    db.prepare("INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES (?, 'google', ?)").run(userId, googleId);
-
+    await pool.query(
+      "INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES ($1, 'google', $2)",
+      [user.id, googleId]
+    );
     if (req.file) {
-      db.prepare("INSERT INTO uploads (user_id, type, filename, path) VALUES (?, 'student_id', ?, ?)").run(userId, req.file.filename, req.file.path);
+      await pool.query(
+        "INSERT INTO uploads (user_id, type, filename, path) VALUES ($1, 'student_id', $2, $3)",
+        [user.id, req.file.filename, req.file.path]
+      );
     }
-
-    user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
-    const token = signToken(user);
 
     res.status(201).json({
       user: userResponse(user),
-      token,
+      token: signToken(user),
       message: verification_method === "manual"
         ? `School verification pending. Contact ${config.adminEmail} to get approved.`
         : "School verification pending."
@@ -263,18 +232,12 @@ router.post("/microsoft", upload.single("student_id"), async (req, res) => {
   try {
     const { access_token, name, username, school_email, role, grade, verification_method } = req.body || {};
 
-    if (!access_token) {
-      return res.status(400).json({ error: "access_token required" });
-    }
+    if (!access_token) return res.status(400).json({ error: "access_token required" });
 
-    // Validate Microsoft token (simplified: call Graph or decode and verify)
-    const jwt = require("jsonwebtoken");
     let payload;
     try {
       payload = jwt.decode(access_token);
-      if (!payload || !payload.aud) {
-        return res.status(401).json({ error: "Invalid Microsoft token" });
-      }
+      if (!payload || !payload.aud) return res.status(401).json({ error: "Invalid Microsoft token" });
     } catch (_) {
       return res.status(401).json({ error: "Invalid Microsoft token" });
     }
@@ -282,69 +245,58 @@ router.post("/microsoft", upload.single("student_id"), async (req, res) => {
     const email = (payload.preferred_username || payload.upn || payload.email || "").toLowerCase();
     const msId = payload.oid || payload.sub;
 
-    if (!email) {
-      return res.status(400).json({ error: "Email not provided by Microsoft" });
-    }
+    if (!email) return res.status(400).json({ error: "Email not provided by Microsoft" });
 
-    let user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    let user = await queryOne("SELECT * FROM users WHERE email = $1", [email]);
 
     if (user) {
-      const hasProvider = db.prepare("SELECT id FROM user_providers WHERE user_id = ? AND provider = 'microsoft'").get(user.id);
+      const hasProvider = await queryOne(
+        "SELECT id FROM user_providers WHERE user_id = $1 AND provider = 'microsoft'", [user.id]
+      );
       if (!hasProvider) {
-        db.prepare("INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES (?, 'microsoft', ?)").run(user.id, msId);
+        await pool.query(
+          "INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES ($1, 'microsoft', $2)",
+          [user.id, msId]
+        );
       }
-      const token = signToken(user);
-      return res.json({ user: userResponse(user), token });
+      return res.json({ user: userResponse(user), token: signToken(user) });
     }
 
-    // New user
     if (!name || !role || !verification_method) {
-      return res.status(400).json({
-        error: "New user: provide name, role, verification_method",
-        email,
-        name_from_ms: payload.name
-      });
+      return res.status(400).json({ error: "New user: provide name, role, verification_method", email, name_from_ms: payload.name });
     }
-
     if (verification_method === "student_id" && !req.file) {
       return res.status(400).json({ error: "Student ID photo required" });
     }
 
     const usernameVal = username ? String(username).trim() : null;
     if (usernameVal) {
-      const existingUser = db.prepare("SELECT id FROM users WHERE LOWER(username) = LOWER(?)").get(usernameVal);
-      if (existingUser) {
-        return res.status(409).json({ error: "Username already taken" });
-      }
+      const existingUser = await queryOne("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [usernameVal]);
+      if (existingUser) return res.status(409).json({ error: "Username already taken" });
     }
 
-    const insert = db.prepare(`
-      INSERT INTO users (email, username, name, password_hash, school_email, role, grade, verification_method)
-      VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
-    `);
-    const info = insert.run(
-      email,
-      usernameVal || null,
-      (name || payload.name || "User").trim(),
-      school_email ? school_email.trim().toLowerCase() : null,
-      role,
-      grade || null,
-      verification_method
+    const result = await pool.query(
+      `INSERT INTO users (email, username, name, school_email, role, grade, verification_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [email, usernameVal || null, (name || payload.name || "User").trim(),
+       school_email ? school_email.trim().toLowerCase() : null, role, grade || null, verification_method]
     );
-    const userId = info.lastInsertRowid;
+    user = result.rows[0];
 
-    db.prepare("INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES (?, 'microsoft', ?)").run(userId, msId);
-
+    await pool.query(
+      "INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES ($1, 'microsoft', $2)",
+      [user.id, msId]
+    );
     if (req.file) {
-      db.prepare("INSERT INTO uploads (user_id, type, filename, path) VALUES (?, 'student_id', ?, ?)").run(userId, req.file.filename, req.file.path);
+      await pool.query(
+        "INSERT INTO uploads (user_id, type, filename, path) VALUES ($1, 'student_id', $2, $3)",
+        [user.id, req.file.filename, req.file.path]
+      );
     }
-
-    user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
-    const token = signToken(user);
 
     res.status(201).json({
       user: userResponse(user),
-      token,
+      token: signToken(user),
       message: verification_method === "manual"
         ? `School verification pending. Contact ${config.adminEmail} to get approved.`
         : "School verification pending."
@@ -356,13 +308,18 @@ router.post("/microsoft", upload.single("student_id"), async (req, res) => {
 });
 
 // --- Get current user ---
-router.get("/me", auth, (req, res) => {
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json(userResponse(user));
+router.get("/me", auth, async (req, res) => {
+  try {
+    const user = await queryOne("SELECT * FROM users WHERE id = $1", [req.userId]);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(userResponse(user));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to get user" });
+  }
 });
 
-// --- Logout (client discards token; optional: blacklist) ---
+// --- Logout ---
 router.post("/logout", (req, res) => {
   res.json({ ok: true });
 });
