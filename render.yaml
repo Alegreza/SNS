@@ -12,4 +12,12 @@ services:
       - key: PORT
         value: 3000
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: kobe-db
+          property: connectionString
+
+databases:
+  - name: kobe-db
+    databaseName: kobe
+    user: kobe
+    plan: free

@@ -205,6 +205,7 @@
     authScreen: "choose",
     authProvider: null,
     adminFilter: "all",
+    adminTab: "users",
     adminUsers: [],
     expandedComments: {},   // postId -> true/false
     commentsByPost: {}      // postId -> comment[]
@@ -578,96 +579,133 @@
     });
   }
 
-  function renderPostCard(post, opts) {
-    // opts: { showSpace: bool, spaceLabel: string }
-    opts = opts || {};
-    var pc = el("article", "post-card");
-    if (opts.showSpace) {
-      var meta = el("div", "post-meta");
-      meta.textContent = (opts.spaceLabel || "Space") + " \xB7 " + post.section;
-      pc.appendChild(meta);
-    } else {
-      var meta2 = el("div", "post-meta");
-      meta2.textContent = post.section;
-      pc.appendChild(meta2);
-    }
-    var pt = el("h3");
-    pt.textContent = post.title;
-    var ex = el("p", "post-excerpt");
-    ex.textContent = post.content.length > 100 ? post.content.slice(0, 100) + "..." : post.content;
-    var au = el("div", "post-author");
-    au.textContent = post.authorName + " \xB7 " + new Date(post.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    pc.appendChild(pt);
-    pc.appendChild(ex);
-    pc.appendChild(au);
+  function fmtDate(d) {
+    return new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
 
-    // Comment toggle button
-    var commentComments = appViewState.commentsByPost[post.id] || [];
+  function renderPostCard(post, opts) {
+    opts = opts || {};
+    var isAdmin = userState.role === "admin";
+    var commentList = appViewState.commentsByPost[post.id] || [];
     var expanded = !!appViewState.expandedComments[post.id];
+
+    var article = el("article", "post-card");
+
+    // Top row: badge + title + comment count
+    var row = el("div", "post-card-row");
+    var badge = el("span", "post-section-badge");
+    badge.textContent = opts.showSpace
+      ? (opts.spaceLabel || "Space") + " · " + post.section.split(" ")[0]
+      : post.section.split(" ")[0];
+    row.appendChild(badge);
+
+    var title = el("span", "post-title");
+    title.textContent = post.title;
+    row.appendChild(title);
+
+    var cc = el("span", "post-comment-count");
+    cc.textContent = "[" + commentList.length + "]";
+    row.appendChild(cc);
+    article.appendChild(row);
+
+    // Excerpt
+    var ex = el("p", "post-excerpt");
+    ex.textContent = post.content.length > 80 ? post.content.slice(0, 80) + "…" : post.content;
+    article.appendChild(ex);
+
+    // Meta row: author · date
+    var meta = el("div", "post-meta-row");
+    var authorSpan = document.createElement("span");
+    authorSpan.textContent = post.authorName;
+    var dateSpan = document.createElement("span");
+    dateSpan.textContent = fmtDate(post.createdAt);
+    meta.appendChild(authorSpan);
+    meta.appendChild(dateSpan);
+    article.appendChild(meta);
+
+    // Admin reveal: real author + IP for anonymous posts
+    if (isAdmin && post.isAnonymous) {
+      var reveal = el("span", "admin-reveal");
+      reveal.textContent = "\uD83D\uDD0D " + (post.author_name || post.authorName) + " · IP: " + (post.author_ip || "unknown");
+      article.appendChild(reveal);
+    }
+
+    // Comment area
+    var commentArea = el("div", "comment-area");
+
     var toggleBtn = el("button", "comment-toggle-btn");
-    toggleBtn.textContent = "\uD83D\uDCAC " + commentComments.length + " comment" + (commentComments.length !== 1 ? "s" : "");
+    toggleBtn.textContent = "댓글 " + commentList.length + "개" + (expanded ? " ▲" : " ▼");
     toggleBtn.addEventListener("click", function () {
       appViewState.expandedComments[post.id] = !appViewState.expandedComments[post.id];
       if (appViewState.expandedComments[post.id] && !appViewState.commentsByPost[post.id]) {
-        loadComments(post.id).then(function () { render(); });
+        loadComments(post.id).then(render);
         return;
       }
       render();
     });
-    pc.appendChild(toggleBtn);
+    commentArea.appendChild(toggleBtn);
 
     if (expanded) {
       var commentSection = el("div", "comment-section");
 
-      if (commentComments.length > 0) {
-        commentComments.forEach(function (c) {
+      if (commentList.length > 0) {
+        commentList.forEach(function (c) {
           var ci = el("div", "comment-item");
           var ca = el("span", "comment-author");
-          ca.textContent = c.author_name + " \xB7 ";
-          var ct = el("span", "comment-text");
+          ca.textContent = c.author_name;
+          var ct = el("p", "comment-text");
           ct.textContent = c.content;
           var cd = el("span", "comment-date");
-          cd.textContent = " \xB7 " + new Date(c.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-          ci.appendChild(ca);
-          ci.appendChild(ct);
-          ci.appendChild(cd);
+          cd.textContent = fmtDate(c.created_at);
+          // Admin reveal for anonymous comments
+          if (isAdmin && c.is_anonymous) {
+            var cr = el("span", "admin-reveal");
+            cr.textContent = "\uD83D\uDD0D " + (c.author_name || "?") + " · IP: " + (c.author_ip || "unknown");
+            ci.appendChild(ca);
+            ci.appendChild(ct);
+            ci.appendChild(cd);
+            ci.appendChild(cr);
+          } else {
+            ci.appendChild(ca);
+            ci.appendChild(ct);
+            ci.appendChild(cd);
+          }
           commentSection.appendChild(ci);
         });
       } else {
         var noC = el("p", "muted");
-        noC.style.fontSize = "0.85rem";
-        noC.textContent = "No comments yet.";
+        noC.textContent = "아직 댓글이 없어요.";
         commentSection.appendChild(noC);
       }
 
-      // Comment form
       if (userState.isAuthenticated) {
         var cForm = el("form", "comment-form");
         var isAnonSection = post.section === "Anonymous / Vent";
         cForm.innerHTML =
-          '<textarea name="content" rows="2" placeholder="Write a comment\u2026" required></textarea>' +
-          (isAnonSection ? '<label class="checkbox-inline"><input type="checkbox" name="isAnonymous" checked /> Anonymous</label>' : '') +
-          '<button type="submit" class="primary-button small">Reply</button>';
+          '<textarea name="content" rows="2" placeholder="댓글 작성…" required></textarea>' +
+          (isAnonSection ? '<label class="checkbox-inline"><input type="checkbox" name="isAnonymous" checked /> 익명</label>' : '') +
+          '<button type="submit" class="primary-button small">등록</button>';
         cForm.addEventListener("submit", function (ev) {
           ev.preventDefault();
           var content = (cForm.content && cForm.content.value || "").trim();
           var isAnon = cForm.isAnonymous ? cForm.isAnonymous.checked : false;
           if (!content) return;
-          var btn = cForm.querySelector("button[type=submit]");
-          btn.disabled = true;
+          var submitBtn = cForm.querySelector("button[type=submit]");
+          submitBtn.disabled = true;
           submitComment(post.id, content, isAnon, function () {
             cForm.reset();
-            btn.disabled = false;
+            submitBtn.disabled = false;
             render();
           });
         });
         commentSection.appendChild(cForm);
       }
 
-      pc.appendChild(commentSection);
+      commentArea.appendChild(commentSection);
     }
 
-    return pc;
+    article.appendChild(commentArea);
+    return article;
   }
 
   function clearRoot() {
@@ -680,62 +718,65 @@
     return e;
   }
 
-  function renderHeader(container) {
-    var header = el("header", "app-header");
-    var title = el("div", "app-title");
-    title.textContent = "School-Only SNS";
-    var subtitle = el("div", "app-subtitle");
-    subtitle.textContent = "A quiet space for your class, subjects & clubs";
-    var right = el("div", "app-header-right");
+  function renderNavbar(container) {
+    var nav = el("nav", "top-navbar");
+
+    var logo = el("div", "navbar-logo");
+    logo.innerHTML = "Kobe<span>Cranbrook School</span>";
+    logo.addEventListener("click", function () { setActiveTab("home"); });
+    nav.appendChild(logo);
 
     if (userState.isAuthenticated) {
-      var userInfo = el("div", "app-user-info");
-      var roleLabel = userState.role === "admin" ? "Admin" : (userState.role === "teacher" ? "Teacher" : "Student");
-      userInfo.textContent = userState.name + " (" + roleLabel + (userState.grade ? ", Grade " + userState.grade : "") + ")";
-      var logoutBtn = el("button", "ghost-button");
+      var tabsEl = el("div", "navbar-tabs");
+      var tabs = [
+        { id: "home", label: "Home" },
+        { id: "spaces", label: "Boards" },
+        { id: "questions", label: "Q&A / Vent" },
+        { id: "notifications", label: "Notifications" },
+        { id: "profile", label: "Profile" }
+      ];
+      if (userState.role === "admin") tabs.push({ id: "admin", label: "Admin" });
+      tabs.forEach(function (tab) {
+        var btn = el("button", "navbar-tab" + (appViewState.activeTab === tab.id ? " active" : ""));
+        btn.textContent = tab.label;
+        if (tab.id === "notifications" && appViewState.unreadCount > 0) {
+          var badge = el("span", "notif-badge");
+          badge.textContent = String(appViewState.unreadCount);
+          btn.appendChild(badge);
+        }
+        btn.addEventListener("click", function () { setActiveTab(tab.id); });
+        tabsEl.appendChild(btn);
+      });
+      nav.appendChild(tabsEl);
+
+      var right = el("div", "navbar-right");
+      var roleLabel = userState.role === "admin" ? "Admin" : (userState.role === "teacher" ? "Teacher" : "Grade " + (userState.grade || "?"));
+      var userInfo = el("span", "navbar-user");
+      userInfo.textContent = userState.name + " · " + roleLabel;
+      var logoutBtn = el("button", "ghost-button small");
+      logoutBtn.style.cssText = "color:#fff;border-color:rgba(255,255,255,0.4);";
       logoutBtn.textContent = "Sign out";
       logoutBtn.addEventListener("click", handleLogoutClick);
       right.appendChild(userInfo);
       right.appendChild(logoutBtn);
-    } else {
-      var hint = el("div", "app-header-hint");
-      hint.textContent = "Sign in with your school account (M365)";
-      right.appendChild(hint);
+      nav.appendChild(right);
     }
 
-    header.appendChild(title);
-    header.appendChild(subtitle);
-    header.appendChild(right);
-    container.appendChild(header);
+    container.appendChild(nav);
 
     if (userState.isAuthenticated && userState.verification_status === "pending") {
+      var wrap = el("div", "app-wrapper");
       var banner = el("div", "verification-pending-banner");
       banner.textContent = "School verification pending. Contact mkim28@cranbrook.edu to get approved.";
-      container.appendChild(banner);
+      wrap.appendChild(banner);
+      container.appendChild(wrap);
     }
-  }
-
-  function renderTabs(container) {
-    var nav = el("nav", "tab-nav");
-    var tabs = [{ id: "home", label: "Home" }, { id: "spaces", label: "Spaces" }, { id: "questions", label: "Questions & Concerns" }, { id: "notifications", label: "Notifications" }, { id: "profile", label: "Profile" }];
-    if (userState.role === "admin") tabs.push({ id: "admin", label: "Admin" });
-    tabs.forEach(function (tab) {
-      var btn = el("button", "tab-button" + (appViewState.activeTab === tab.id ? " active" : ""));
-      btn.textContent = tab.label;
-      if (tab.id === "notifications" && appViewState.unreadCount > 0) {
-        var badge = el("span", "notif-badge");
-        badge.textContent = String(appViewState.unreadCount);
-        btn.appendChild(badge);
-      }
-      btn.addEventListener("click", function () { setActiveTab(tab.id); });
-      nav.appendChild(btn);
-    });
-    container.appendChild(nav);
   }
 
   function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
   function renderLogin(container) {
+    var loginWrap = el("div", "login-wrap");
     var pending = appViewState.pendingMsAccount;
     var screen = appViewState.authScreen;
     var ac = window.AUTH_CONFIG || {};
@@ -743,7 +784,7 @@
     var msCfg = window.MSAL_CONFIG;
     var msalReady = msCfg && msCfg.clientId && msCfg.clientId !== "YOUR_CLIENT_ID" && (typeof window.msal !== "undefined" || typeof msal !== "undefined");
 
-    var card = el("section", "card login-card");
+    var card = el("section", "login-card");
 
     if (pending && pending.token) {
       var title = el("h2");
@@ -763,7 +804,8 @@
       card.appendChild(title);
       card.appendChild(desc);
       card.appendChild(form);
-      container.appendChild(card);
+      loginWrap.appendChild(card);
+      container.appendChild(loginWrap);
       setTimeout(function () {
         var backBtn = document.getElementById("ms-back-btn");
         if (backBtn) backBtn.addEventListener("click", function () { appViewState.pendingMsAccount = null; render(); });
@@ -773,15 +815,16 @@
 
     if (screen === "choose") {
       var t = el("h2");
-      t.textContent = "School-Only SNS";
-      var d = el("p", "muted");
-      d.textContent = "Log in or sign up to join your class spaces.";
+      t.textContent = "Kobe";
+      t.style.color = "var(--color-primary)";
+      var d = el("p", "login-sub");
+      d.textContent = "Cranbrook School 전용 커뮤니티";
       var logBtn = el("button", "primary-button");
-      logBtn.textContent = "Log in";
+      logBtn.textContent = "로그인";
       logBtn.style.marginRight = "0.5rem";
       logBtn.addEventListener("click", function () { appViewState.authScreen = "login"; render(); });
       var signBtn = el("button", "ghost-button");
-      signBtn.textContent = "Sign up";
+      signBtn.textContent = "회원가입";
       signBtn.addEventListener("click", function () { appViewState.authScreen = "signup"; render(); });
       card.appendChild(t);
       card.appendChild(d);
@@ -789,7 +832,8 @@
       btnWrap.appendChild(logBtn);
       btnWrap.appendChild(signBtn);
       card.appendChild(btnWrap);
-      container.appendChild(card);
+      loginWrap.appendChild(card);
+      container.appendChild(loginWrap);
       return;
     }
 
@@ -797,16 +841,16 @@
       var back = el("a");
       back.href = "#";
       back.className = "muted";
-      back.textContent = "← Back";
+      back.textContent = "← 뒤로";
       back.style.display = "block";
       back.style.marginBottom = "0.5rem";
       back.addEventListener("click", function (e) { e.preventDefault(); appViewState.authScreen = "choose"; render(); });
       var t2 = el("h2");
-      t2.textContent = "Log in";
+      t2.textContent = "로그인";
       var form = el("form", "form-grid");
-      form.innerHTML = '<div class="form-field"><label>Email or username</label><input name="login" type="text" placeholder="Email or username" required /></div>' +
-        '<div class="form-field"><label>Password</label><input name="password" type="password" required /></div>' +
-        '<div class="form-actions"><button type="submit" class="primary-button">Sign in</button></div>';
+      form.innerHTML = '<div class="form-field"><label>이메일 또는 사용자명</label><input name="login" type="text" placeholder="이메일 또는 사용자명" required /></div>' +
+        '<div class="form-field"><label>비밀번호</label><input name="password" type="password" required /></div>' +
+        '<div class="form-actions"><button type="submit" class="primary-button">로그인</button></div>';
       form.addEventListener("submit", handleLoginSubmit);
       card.appendChild(back);
       card.appendChild(t2);
@@ -818,7 +862,8 @@
         msBtn.addEventListener("click", handleMicrosoftLogin);
         card.appendChild(msBtn);
       }
-      container.appendChild(card);
+      loginWrap.appendChild(card);
+      container.appendChild(loginWrap);
       return;
     }
 
@@ -826,12 +871,12 @@
       var back2 = el("a");
       back2.href = "#";
       back2.className = "muted";
-      back2.textContent = "← Back";
+      back2.textContent = "← 뒤로";
       back2.style.display = "block";
       back2.style.marginBottom = "0.5rem";
       back2.addEventListener("click", function (e) { e.preventDefault(); appViewState.authScreen = "choose"; render(); });
       var t3 = el("h2");
-      t3.textContent = "Sign up";
+      t3.textContent = "회원가입";
       card.appendChild(back2);
       card.appendChild(t3);
       if (msalReady) {
@@ -841,26 +886,28 @@
         msSignup.addEventListener("click", handleMicrosoftLogin);
         card.appendChild(msSignup);
         var orP = el("p", "muted");
-        orP.textContent = "Or with email:";
+        orP.textContent = "또는 이메일로:";
         card.appendChild(orP);
       }
       var signupForm = el("form", "form-grid");
-      signupForm.innerHTML = '<div class="form-field"><label>Email</label><input name="email" type="email" required /></div>' +
-        '<div class="form-field"><label>Username (optional)</label><input name="username" type="text" placeholder="Login with email or username" /></div>' +
-        '<div class="form-field"><label>Password</label><input name="password" type="password" required /></div>' +
-        '<div class="form-field"><label>Name</label><input name="name" required /></div>' +
-        '<div class="form-field"><label>School email (optional)</label><input name="school_email" type="email" /></div>' +
-        '<div class="form-field"><label>Role</label><select name="role" required><option value="">Select</option><option value="student">Student</option><option value="teacher">Teacher</option></select></div>' +
-        '<div class="form-field"><label>Grade</label><select name="grade" required><option value="">Select</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></div>' +
-        '<div class="form-field"><label>School verification</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> Manual: Contact ' + esc(adminEmail) + '</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> Upload student ID</label><input type="file" name="student_id" accept="image/*" /></div>' +
-        '<div class="form-actions"><button type="submit" class="primary-button">Sign up</button></div>';
+      signupForm.innerHTML = '<div class="form-field"><label>이메일</label><input name="email" type="email" required /></div>' +
+        '<div class="form-field"><label>사용자명 (선택)</label><input name="username" type="text" placeholder="이메일 또는 사용자명으로 로그인" /></div>' +
+        '<div class="form-field"><label>비밀번호</label><input name="password" type="password" required /></div>' +
+        '<div class="form-field"><label>이름</label><input name="name" required /></div>' +
+        '<div class="form-field"><label>학교 이메일 (선택)</label><input name="school_email" type="email" /></div>' +
+        '<div class="form-field"><label>역할</label><select name="role" required><option value="">선택</option><option value="student">학생</option><option value="teacher">교사</option></select></div>' +
+        '<div class="form-field"><label>학년</label><select name="grade" required><option value="">선택</option><option value="9">9학년</option><option value="10">10학년</option><option value="11">11학년</option><option value="12">12학년</option></select></div>' +
+        '<div class="form-field"><label>학교 인증 방법</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> 수동: ' + esc(adminEmail) + ' 에게 연락</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> 학생증 사진 업로드</label><input type="file" name="student_id" accept="image/*" /></div>' +
+        '<div class="form-actions"><button type="submit" class="primary-button">가입하기</button></div>';
       signupForm.addEventListener("submit", handleSignupSubmit);
       card.appendChild(signupForm);
-      container.appendChild(card);
+      loginWrap.appendChild(card);
+      container.appendChild(loginWrap);
     }
   }
 
   function renderHome(container) {
+    var wrap = el("div", "app-wrapper");
     var layout = el("div", "home-layout");
     var left = el("div", "home-left");
     var right = el("div", "home-right");
@@ -939,174 +986,169 @@
 
     layout.appendChild(left);
     layout.appendChild(right);
-    container.appendChild(layout);
+    wrap.appendChild(layout);
+    container.appendChild(wrap);
   }
 
   function renderSpaces(container) {
-    var layout = el("div", "spaces-layout");
-    var sidebar = el("aside", "spaces-sidebar");
-    var content = el("div", "spaces-content");
+    var wrap = el("div", "app-wrapper");
+    var layout = el("div", "layout");
+    var sidebarEl = el("aside", "layout-sidebar");
+    var mainEl = el("div", "layout-main");
 
     var userSpaces = getSpacesForUser();
-    var h2 = el("h2");
-    h2.textContent = "Spaces";
-    sidebar.appendChild(h2);
-    var list = el("div", "space-list-vertical");
     var spacesToUse = userSpaces.length ? userSpaces : spaces;
     if (!appViewState.activeSpaceId && spacesToUse.length) appViewState.activeSpaceId = spacesToUse[0].id;
 
-    spacesToUse.forEach(function (space) {
-      var it = el("button", "space-item" + (space.id === appViewState.activeSpaceId ? " active" : ""));
-      it.textContent = space.name;
-      it.addEventListener("click", function () { setActiveSpace(space.id); });
-      list.appendChild(it);
+    // Group spaces by type
+    var groups = { class: [], subject: [], club: [] };
+    spacesToUse.forEach(function (s) { if (groups[s.type]) groups[s.type].push(s); });
+    var groupLabels = { class: "학년 게시판", subject: "과목 게시판", club: "동아리" };
+
+    Object.keys(groups).forEach(function (type) {
+      if (!groups[type].length) return;
+      var sec = el("div", "sidebar-section");
+      var title = el("div", "sidebar-title");
+      title.textContent = groupLabels[type];
+      sec.appendChild(title);
+      groups[type].forEach(function (space) {
+        var btn = el("button", "sidebar-item" + (space.id === appViewState.activeSpaceId ? " active" : ""));
+        btn.textContent = space.name;
+        btn.addEventListener("click", function () { setActiveSpace(space.id); });
+        sec.appendChild(btn);
+      });
+      sidebarEl.appendChild(sec);
     });
-    sidebar.appendChild(list);
 
     var activeSpace = spacesToUse.filter(function (s) { return s.id === appViewState.activeSpaceId; })[0];
 
     if (!activeSpace) {
       var mp = el("p", "muted");
-      mp.textContent = "Select a space on the left.";
-      content.appendChild(mp);
+      mp.textContent = "왼쪽에서 게시판을 선택하세요.";
+      mainEl.appendChild(mp);
     } else {
-      var header = el("div", "space-header");
-      var at = el("h2");
-      at.textContent = activeSpace.name;
+      // Section tabs
       var st = el("div", "section-tabs");
       activeSpace.sections.forEach(function (section) {
-        var btn = el("button", "chip" + (section === appViewState.activeSection ? " active" : ""));
-        var lbl = document.createElement("span");
-        lbl.textContent = section;
-        btn.appendChild(lbl);
-        if (isStudentOnlySection(section)) {
-          var badge = el("span", "student-only-badge");
-          badge.textContent = "Student only";
-          badge.title = "Teachers can read but not post here.";
-          btn.appendChild(badge);
-        }
+        var btn = el("button", "section-tab" + (section === appViewState.activeSection ? " active" : ""));
+        btn.textContent = section + (isStudentOnlySection(section) ? " 🔒" : "");
+        btn.title = isStudentOnlySection(section) ? "학생 전용 섹션" : "";
         btn.addEventListener("click", function () { setActiveSection(section); });
         st.appendChild(btn);
       });
-      header.appendChild(at);
-      header.appendChild(st);
-      content.appendChild(header);
+      mainEl.appendChild(st);
 
       if (userState.isAuthenticated && canUserPostInSection(appViewState.activeSection)) {
-        var composer = el("section", "card post-composer");
-        var form = el("form");
+        var composer = el("div", "composer");
         var defAnon = appViewState.activeSection === "Anonymous / Vent";
-        form.innerHTML = '<div class="composer-header"><span class="composer-title">New post · ' + appViewState.activeSection + '</span><label class="checkbox-inline"><input type="checkbox" name="isAnonymous" ' + (defAnon ? 'checked' : '') + ' /> Post anonymously</label></div>' +
-          '<div class="form-field"><input name="title" placeholder="Title" required /></div>' +
-          '<div class="form-field"><textarea name="content" rows="3" placeholder="Content" required></textarea></div>' +
-          '<div class="form-actions right"><button type="submit" class="primary-button small">Post</button></div>';
+        var composerTitle = el("p", "composer-title");
+        composerTitle.textContent = activeSpace.name + " · " + appViewState.activeSection;
+        composer.appendChild(composerTitle);
+        var form = el("form");
+        form.innerHTML =
+          '<div class="form-field" style="margin-bottom:0.5rem"><input name="title" placeholder="제목" required /></div>' +
+          '<div class="form-field"><textarea name="content" rows="3" placeholder="내용을 입력하세요" required></textarea></div>' +
+          '<div class="composer-row"><label class="checkbox-inline"><input type="checkbox" name="isAnonymous" ' + (defAnon ? "checked" : "") + ' /> 익명</label>' +
+          '<button type="submit" class="primary-button small">등록</button></div>';
         form.addEventListener("submit", handleCreatePost);
         composer.appendChild(form);
-        content.appendChild(composer);
+        mainEl.appendChild(composer);
       } else if (userState.isAuthenticated && !canUserPostInSection(appViewState.activeSection)) {
         var notice = el("div", "student-only-notice");
-        notice.textContent = "This is a student-only section. Teachers can read but cannot post here.";
-        content.appendChild(notice);
+        notice.textContent = "학생 전용 섹션입니다. 교사는 읽기만 가능합니다.";
+        mainEl.appendChild(notice);
       }
 
-      var postCard = el("section", "card");
-      var plTitle = el("h3");
-      plTitle.textContent = appViewState.activeSection + " posts";
-      postCard.appendChild(plTitle);
       var postsInSpace = getPostsForSpace(appViewState.activeSpaceId, appViewState.activeSection);
+      var postListEl = el("div", "post-list");
+      var listHeader = el("div", "post-list-header");
+      var listTitle = el("span", "post-list-title");
+      listTitle.textContent = appViewState.activeSection;
+      listHeader.appendChild(listTitle);
+      postListEl.appendChild(listHeader);
+
       if (postsInSpace.length === 0) {
         var np = el("p", "muted");
-        np.textContent = "No posts yet.";
-        postCard.appendChild(np);
+        np.style.padding = "1rem";
+        np.textContent = "아직 게시물이 없어요.";
+        postListEl.appendChild(np);
       } else {
-        var pl = el("div", "post-list");
         postsInSpace.forEach(function (post) {
-          pl.appendChild(renderPostCard(post, { showSpace: false }));
+          postListEl.appendChild(renderPostCard(post, { showSpace: false }));
         });
-        postCard.appendChild(pl);
       }
-      content.appendChild(postCard);
+      mainEl.appendChild(postListEl);
     }
 
-    layout.appendChild(sidebar);
-    layout.appendChild(content);
-    container.appendChild(layout);
+    layout.appendChild(sidebarEl);
+    layout.appendChild(mainEl);
+    wrap.appendChild(layout);
+    container.appendChild(wrap);
   }
 
   function renderQuestions(container) {
-    var card = el("section", "card");
-    var t = el("h2");
-    t.textContent = "Questions & concerns";
-    card.appendChild(t);
-    var d = el("p", "muted");
-    d.textContent = "All Q&A and anonymous/vent posts from your spaces.";
-    card.appendChild(d);
+    var wrap = el("div", "app-wrapper");
     var feed = getQuestionAndConcernFeed();
+    var listEl = el("div", "post-list");
+    var lh = el("div", "post-list-header");
+    var lt = el("span", "post-list-title"); lt.textContent = "Q&A / Anonymous Vent";
+    lh.appendChild(lt); listEl.appendChild(lh);
     if (feed.length === 0) {
-      var p = el("p", "muted");
-      p.textContent = "No questions or concerns yet.";
-      card.appendChild(p);
+      var p = el("p", "muted"); p.style.padding = "1rem"; p.textContent = "아직 글이 없어요."; listEl.appendChild(p);
     } else {
-      var list = el("div", "post-list");
       feed.forEach(function (post) {
         var sn = spaces.filter(function (s) { return s.id === post.spaceId; })[0];
-        list.appendChild(renderPostCard(post, { showSpace: true, spaceLabel: sn ? sn.name : "Space" }));
+        listEl.appendChild(renderPostCard(post, { showSpace: true, spaceLabel: sn ? sn.name : "Space" }));
       });
-      card.appendChild(list);
     }
-    container.appendChild(card);
+    wrap.appendChild(listEl);
+    container.appendChild(wrap);
   }
 
   function renderNotifications(container) {
+    var wrap = el("div", "app-wrapper");
     var card = el("section", "card");
     var header = el("div", "notif-header");
-    var t = el("h2");
-    t.textContent = "Notifications";
+    var t = el("h2"); t.textContent = "알림";
     header.appendChild(t);
     if (appViewState.notifications.some(function (n) { return !n.is_read; })) {
       var markAllBtn = el("button", "ghost-button small");
-      markAllBtn.textContent = "Mark all read";
-      markAllBtn.addEventListener("click", function () {
-        markAllNotificationsRead().then(render);
-      });
+      markAllBtn.textContent = "모두 읽음";
+      markAllBtn.addEventListener("click", function () { markAllNotificationsRead().then(render); });
       header.appendChild(markAllBtn);
     }
     card.appendChild(header);
 
     var notifs = appViewState.notifications;
     if (notifs.length === 0) {
-      var p = el("p", "muted");
-      p.textContent = "No notifications yet.";
-      card.appendChild(p);
+      var p = el("p", "muted"); p.textContent = "알림이 없어요."; card.appendChild(p);
     } else {
       var ul = el("ul", "notification-list");
       notifs.forEach(function (n) {
         var li = el("li", "notif-item" + (n.is_read ? "" : " notif-unread"));
-        var msg = el("span", "notif-message");
-        msg.textContent = n.message;
+        var msg = el("span", "notif-message"); msg.textContent = n.message;
         var ts = el("span", "notif-time");
-        ts.textContent = new Date(n.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-        li.appendChild(msg);
-        li.appendChild(ts);
+        ts.textContent = new Date(n.created_at).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        li.appendChild(msg); li.appendChild(ts);
         if (!n.is_read) {
           var readBtn = el("button", "ghost-button tiny");
-          readBtn.textContent = "Mark read";
-          readBtn.addEventListener("click", function () {
-            markNotificationRead(n.id).then(render);
-          });
+          readBtn.textContent = "읽음";
+          readBtn.addEventListener("click", function () { markNotificationRead(n.id).then(render); });
           li.appendChild(readBtn);
         }
         ul.appendChild(li);
       });
       card.appendChild(ul);
     }
-    container.appendChild(card);
+    wrap.appendChild(card);
+    container.appendChild(wrap);
   }
 
   function renderProfile(container) {
+    var wrap = el("div", "app-wrapper");
     var card = el("section", "card");
     var t = el("h2");
-    t.textContent = "Profile";
+    t.textContent = "프로필";
     card.appendChild(t);
     if (!userState.isAuthenticated) {
       var p = el("p", "muted");
@@ -1142,83 +1184,180 @@
       }
 
       var lb = el("button", "ghost-button");
-      lb.textContent = "Sign out";
+      lb.textContent = "로그아웃";
       lb.style.marginTop = "1rem";
       lb.addEventListener("click", handleLogoutClick);
       card.appendChild(lb);
     }
-    container.appendChild(card);
+    wrap.appendChild(card);
+    container.appendChild(wrap);
   }
 
   function renderAdmin(container) {
+    var wrap = el("div", "app-wrapper");
     var card = el("section", "card");
-    var t = el("h2");
-    t.textContent = "Admin — User Verification";
-    card.appendChild(t);
 
-    var filterWrap = el("div", "admin-filter");
-    ["all", "pending", "approved", "rejected"].forEach(function (status) {
-      var btn = el("button", "tab-button" + (appViewState.adminFilter === status ? " active" : ""));
-      btn.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-      btn.addEventListener("click", function () {
-        appViewState.adminFilter = status;
-        loadAdminUsers().then(render);
-      });
-      filterWrap.appendChild(btn);
+    // Admin sub-tabs
+    if (!appViewState.adminTab) appViewState.adminTab = "users";
+    var tabBar = el("div", "admin-tabs");
+    [{ id: "users", label: "회원 관리" }, { id: "posts", label: "게시물 관리" }, { id: "spaces", label: "공간 배정" }].forEach(function (t) {
+      var btn = el("button", "admin-tab-btn" + (appViewState.adminTab === t.id ? " active" : ""));
+      btn.textContent = t.label;
+      btn.addEventListener("click", function () { appViewState.adminTab = t.id; render(); });
+      tabBar.appendChild(btn);
     });
-    card.appendChild(filterWrap);
+    card.appendChild(tabBar);
 
-    var tableWrap = el("div", "admin-table-wrap");
-    var loading = el("p", "muted");
-    loading.textContent = "Loading…";
-    tableWrap.appendChild(loading);
-    card.appendChild(tableWrap);
-    container.appendChild(card);
-
-    // Load users and populate table
-    loadAdminUsers().then(function () {
-      while (tableWrap.firstChild) tableWrap.removeChild(tableWrap.firstChild);
-      if (appViewState.adminUsers.length === 0) {
-        var emp = el("p", "muted");
-        emp.textContent = "No users found.";
-        tableWrap.appendChild(emp);
-        return;
-      }
-      var table = el("table", "admin-table");
-      var thead = document.createElement("thead");
-      thead.innerHTML = "<tr><th>Name</th><th>Email</th><th>Role</th><th>Grade</th><th>Method</th><th>Status</th><th>Actions</th></tr>";
-      table.appendChild(thead);
-      var tbody = document.createElement("tbody");
-      appViewState.adminUsers.forEach(function (u) {
-        var tr = document.createElement("tr");
-        tr.id = "admin-user-row-" + u.id;
-        var statusCls = u.verification_status === "approved" ? "badge-approved" : (u.verification_status === "rejected" ? "badge-rejected" : "badge-pending");
-        tr.innerHTML =
-          "<td>" + esc(u.name) + "</td>" +
-          "<td>" + esc(u.email) + "</td>" +
-          "<td>" + esc(u.role) + "</td>" +
-          "<td>" + esc(u.grade || "—") + "</td>" +
-          "<td>" + esc(u.verification_method) + "</td>" +
-          '<td><span class="verification-badge ' + statusCls + '">' + esc(u.verification_status) + "</span></td>" +
-          "<td></td>";
-        var actionCell = tr.cells[6];
-        if (u.verification_status !== "approved") {
-          var approveBtn = el("button", "primary-button admin-action-btn");
-          approveBtn.textContent = "Approve";
-          approveBtn.addEventListener("click", function () { handleAdminVerify(u.id, "approved", tr); });
-          actionCell.appendChild(approveBtn);
-        }
-        if (u.verification_status !== "rejected") {
-          var rejectBtn = el("button", "ghost-button admin-action-btn");
-          rejectBtn.textContent = "Reject";
-          rejectBtn.addEventListener("click", function () { handleAdminVerify(u.id, "rejected", tr); });
-          actionCell.appendChild(rejectBtn);
-        }
-        tbody.appendChild(tr);
+    if (appViewState.adminTab === "users") {
+      var filterWrap = el("div", "admin-filter");
+      ["all", "pending", "approved", "rejected"].forEach(function (status) {
+        var btn = el("button", (appViewState.adminFilter === status ? "primary-button" : "ghost-button") + " small");
+        btn.textContent = { all: "전체", pending: "대기", approved: "승인", rejected: "거절" }[status];
+        btn.addEventListener("click", function () {
+          appViewState.adminFilter = status;
+          loadAdminUsers().then(render);
+        });
+        filterWrap.appendChild(btn);
       });
-      table.appendChild(tbody);
-      tableWrap.appendChild(table);
-    });
+      card.appendChild(filterWrap);
+
+      var tableWrap = el("div", "admin-table-wrap");
+      var loading = el("p", "muted");
+      loading.textContent = "불러오는 중…";
+      tableWrap.appendChild(loading);
+      card.appendChild(tableWrap);
+
+      loadAdminUsers().then(function () {
+        while (tableWrap.firstChild) tableWrap.removeChild(tableWrap.firstChild);
+        if (!appViewState.adminUsers.length) {
+          var emp = el("p", "muted"); emp.textContent = "회원이 없습니다."; tableWrap.appendChild(emp); return;
+        }
+        var table = el("table", "admin-table");
+        table.innerHTML = "<thead><tr><th>이름</th><th>이메일</th><th>역할</th><th>학년</th><th>인증방법</th><th>상태</th><th>액션</th></tr></thead>";
+        var tbody = document.createElement("tbody");
+        appViewState.adminUsers.forEach(function (u) {
+          var tr = document.createElement("tr");
+          tr.id = "admin-user-row-" + u.id;
+          var statusCls = u.verification_status === "approved" ? "badge-approved" : (u.verification_status === "rejected" ? "badge-rejected" : "badge-pending");
+          tr.innerHTML = "<td>" + esc(u.name) + "</td><td>" + esc(u.email) + "</td><td>" + esc(u.role) + "</td><td>" + esc(u.grade || "—") + "</td><td>" + esc(u.verification_method) + "</td><td><span class='verification-badge " + statusCls + "'>" + esc(u.verification_status) + "</span></td><td></td>";
+          var ac = tr.cells[6];
+          if (u.verification_status !== "approved") {
+            var ab = el("button", "primary-button admin-action-btn"); ab.textContent = "승인";
+            ab.addEventListener("click", function () { handleAdminVerify(u.id, "approved", tr); }); ac.appendChild(ab);
+          }
+          if (u.verification_status !== "rejected") {
+            var rb = el("button", "ghost-button admin-action-btn"); rb.textContent = "거절";
+            rb.addEventListener("click", function () { handleAdminVerify(u.id, "rejected", tr); }); ac.appendChild(rb);
+          }
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        tableWrap.appendChild(table);
+      });
+    }
+
+    if (appViewState.adminTab === "posts") {
+      var postsWrap = el("div", "admin-table-wrap");
+      var postsLoading = el("p", "muted"); postsLoading.textContent = "불러오는 중…";
+      postsWrap.appendChild(postsLoading);
+      card.appendChild(postsWrap);
+
+      apiCall("/admin/posts?limit=100").then(function (data) {
+        while (postsWrap.firstChild) postsWrap.removeChild(postsWrap.firstChild);
+        if (!data.length) { var ep = el("p", "muted"); ep.textContent = "게시물이 없습니다."; postsWrap.appendChild(ep); return; }
+        var tbl = el("table", "admin-table");
+        tbl.innerHTML = "<thead><tr><th>#</th><th>공간</th><th>섹션</th><th>제목</th><th>작성자(실명)</th><th>IP</th><th>익명</th><th>날짜</th><th>액션</th></tr></thead>";
+        var tb = document.createElement("tbody");
+        data.forEach(function (p) {
+          var tr = document.createElement("tr");
+          tr.innerHTML = "<td>" + p.id + "</td><td>" + esc(p.space_id) + "</td><td>" + esc(p.section.split(" ")[0]) + "</td><td>" + esc(p.title.slice(0, 30)) + "</td><td>" + esc(p.author_name) + "</td><td>" + esc(p.author_ip || "—") + "</td><td>" + (p.is_anonymous ? "✓" : "") + "</td><td>" + fmtDate(p.created_at) + "</td><td></td>";
+          var dc = tr.cells[8];
+          var delBtn = el("button", "ghost-button admin-action-btn"); delBtn.textContent = "삭제";
+          delBtn.addEventListener("click", function () {
+            if (!confirm("이 게시물을 삭제하시겠습니까?")) return;
+            apiCall("/admin/posts/" + p.id, { method: "DELETE" }).then(function () {
+              tr.remove();
+            }).catch(function (e) { alert(e.message || "삭제 실패"); });
+          });
+          dc.appendChild(delBtn);
+          tb.appendChild(tr);
+        });
+        tbl.appendChild(tb);
+        postsWrap.appendChild(tbl);
+      }).catch(function () {
+        while (postsWrap.firstChild) postsWrap.removeChild(postsWrap.firstChild);
+        var ep2 = el("p", "muted"); ep2.textContent = "로드 실패"; postsWrap.appendChild(ep2);
+      });
+    }
+
+    if (appViewState.adminTab === "spaces") {
+      var spacesWrap = el("div", "admin-table-wrap");
+      var spacesLoading = el("p", "muted"); spacesLoading.textContent = "불러오는 중…";
+      spacesWrap.appendChild(spacesLoading);
+      card.appendChild(spacesWrap);
+
+      Promise.all([
+        apiCall("/admin/spaces"),
+        apiCall("/admin/users?status=all")
+      ]).then(function (results) {
+        var spaceData = results[0];
+        var allUsers = results[1].filter(function (u) { return u.role === "teacher"; });
+        while (spacesWrap.firstChild) spacesWrap.removeChild(spacesWrap.firstChild);
+
+        spaceData.forEach(function (sp) {
+          var row = el("div", "card");
+          row.style.marginBottom = "0.5rem";
+          var rowTitle = el("strong");
+          rowTitle.textContent = sp.name + " (" + sp.type + ")";
+          row.appendChild(rowTitle);
+
+          var teacherList = el("p", "muted");
+          teacherList.style.margin = "0.3rem 0";
+          teacherList.textContent = sp.teachers && sp.teachers.length
+            ? "담당 교사: " + sp.teachers.map(function (t) { return t.name; }).join(", ")
+            : "담당 교사 없음";
+          row.appendChild(teacherList);
+
+          // Teacher assign select
+          var sel = document.createElement("select");
+          sel.style.cssText = "font-size:0.85rem;padding:0.25rem;margin-right:0.4rem;border:1px solid var(--color-border);border-radius:3px;";
+          var opt0 = document.createElement("option"); opt0.value = ""; opt0.textContent = "교사 선택…"; sel.appendChild(opt0);
+          allUsers.forEach(function (u) {
+            var opt = document.createElement("option"); opt.value = u.id; opt.textContent = u.name + " (" + u.email + ")"; sel.appendChild(opt);
+          });
+          var assignBtn = el("button", "primary-button small"); assignBtn.textContent = "배정";
+          assignBtn.addEventListener("click", function () {
+            if (!sel.value) return;
+            apiCall("/admin/spaces/" + sp.id + "/teachers/" + sel.value, { method: "PUT" }).then(function () {
+              appViewState.adminTab = "spaces"; render();
+            }).catch(function (e) { alert(e.message || "배정 실패"); });
+          });
+          row.appendChild(sel);
+          row.appendChild(assignBtn);
+
+          // Remove buttons for existing teachers
+          if (sp.teachers && sp.teachers.length) {
+            sp.teachers.forEach(function (t) {
+              var removeBtn = el("button", "ghost-button small"); removeBtn.textContent = t.name + " 제거";
+              removeBtn.style.marginLeft = "0.4rem";
+              removeBtn.addEventListener("click", function () {
+                apiCall("/admin/spaces/" + sp.id + "/teachers/" + t.id, { method: "DELETE" }).then(function () {
+                  appViewState.adminTab = "spaces"; render();
+                }).catch(function (e) { alert(e.message || "제거 실패"); });
+              });
+              row.appendChild(removeBtn);
+            });
+          }
+          spacesWrap.appendChild(row);
+        });
+      }).catch(function () {
+        while (spacesWrap.firstChild) spacesWrap.removeChild(spacesWrap.firstChild);
+        var ep3 = el("p", "muted"); ep3.textContent = "로드 실패"; spacesWrap.appendChild(ep3);
+      });
+    }
+
+    wrap.appendChild(card);
+    container.appendChild(wrap);
   }
 
   function loadAdminUsers() {
@@ -1266,26 +1405,26 @@
 
   function render() {
     clearRoot();
-    var wrapper = el("div", "app-wrapper");
-    renderHeader(wrapper);
+    var page = el("div");
 
     if (!userState.isAuthenticated) {
-      renderLogin(wrapper);
+      renderNavbar(page);
+      renderLogin(page);
     } else {
-      renderTabs(wrapper);
-      var content = el("main", "app-main");
+      renderNavbar(page);
+      var content = el("main");
       switch (appViewState.activeTab) {
-        case "home": renderHome(content); break;
-        case "spaces": renderSpaces(content); break;
-        case "questions": renderQuestions(content); break;
+        case "home":          renderHome(content); break;
+        case "spaces":        renderSpaces(content); break;
+        case "questions":     renderQuestions(content); break;
         case "notifications": renderNotifications(content); break;
-        case "profile": renderProfile(content); break;
-        case "admin": renderAdmin(content); break;
-        default: renderHome(content);
+        case "profile":       renderProfile(content); break;
+        case "admin":         renderAdmin(content); break;
+        default:              renderHome(content);
       }
-      wrapper.appendChild(content);
+      page.appendChild(content);
     }
-    appRoot.appendChild(wrapper);
+    appRoot.appendChild(page);
   }
 
   restoreSession().then(function (restored) {

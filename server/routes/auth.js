@@ -5,6 +5,7 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const jwksRsa = require("jwks-rsa");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -12,6 +13,52 @@ const { OAuth2Client } = require("google-auth-library");
 const { pool, queryOne } = require("../db");
 const config = require("../config");
 const { auth } = require("../middleware/auth");
+
+// Microsoft JWKS client — verifies token signatures against Microsoft's public keys.
+// Option C (MVP): signature + issuer + azp/appid claim check (audience = MS Graph, not our clientId).
+const msJwksClient = jwksRsa({
+  jwksUri: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+  cache: true,
+  cacheMaxEntries: 5,
+  cacheMaxAge: 10 * 60 * 1000 // 10 minutes
+});
+
+function getMsSigningKey(header) {
+  return new Promise((resolve, reject) => {
+    msJwksClient.getSigningKey(header.kid, (err, key) => {
+      if (err) return reject(err);
+      resolve(key.getPublicKey());
+    });
+  });
+}
+
+async function verifyMicrosoftToken(token) {
+  const decoded = jwt.decode(token, { complete: true });
+  if (!decoded || !decoded.header || !decoded.header.kid) {
+    throw new Error("Invalid Microsoft token structure");
+  }
+
+  const signingKey = await getMsSigningKey(decoded.header);
+
+  // Verify signature and standard claims; skip audience check (access token aud = MS Graph).
+  const payload = jwt.verify(token, signingKey, {
+    algorithms: ["RS256"],
+    issuer: [
+      `https://login.microsoftonline.com/${decoded.payload.tid}/v2.0`,
+      `https://sts.windows.net/${decoded.payload.tid}/`
+    ]
+  });
+
+  // Confirm token was issued by our registered Azure app (azp = delegated, appid = app-only).
+  if (config.microsoftClientId) {
+    const appClaim = payload.azp || payload.appid;
+    if (appClaim !== config.microsoftClientId) {
+      throw new Error("Microsoft token client mismatch");
+    }
+  }
+
+  return payload;
+}
 
 const router = express.Router();
 
@@ -236,9 +283,9 @@ router.post("/microsoft", upload.single("student_id"), async (req, res) => {
 
     let payload;
     try {
-      payload = jwt.decode(access_token);
-      if (!payload || !payload.aud) return res.status(401).json({ error: "Invalid Microsoft token" });
-    } catch (_) {
+      payload = await verifyMicrosoftToken(access_token);
+    } catch (verifyErr) {
+      console.error("Microsoft token verification failed:", verifyErr.message);
       return res.status(401).json({ error: "Invalid Microsoft token" });
     }
 

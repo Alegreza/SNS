@@ -6,22 +6,40 @@ const { auth } = require("../middleware/auth");
 const SECTIONS = ["Announcements & Assignments", "Questions", "Anonymous / Vent"];
 const STUDENT_ONLY_SECTIONS = ["Anonymous / Vent"];
 
+// Reveal real author + IP only to admins
+function sanitizePost(p, userRole) {
+  if (!p.is_anonymous || userRole === "admin") return p;
+  return { ...p, author_name: "Anonymous", author_id: null, author_ip: null };
+}
+
 // GET /api/spaces
 router.get("/spaces", auth, async (req, res) => {
   try {
-    const { grade } = req.query;
     let rows;
     if (req.user.role === "admin") {
-      rows = await query("SELECT * FROM spaces");
-    } else {
+      rows = await query("SELECT * FROM spaces ORDER BY type, name");
+    } else if (req.user.role === "teacher") {
+      // Teachers see spaces explicitly assigned to them
       rows = await query(
-        `SELECT * FROM spaces WHERE type = 'club' OR (type IN ('class','subject') AND grade = $1)`,
-        [grade || req.user.grade]
+        `SELECT s.* FROM spaces s
+         INNER JOIN user_spaces us ON us.space_id = s.id
+         WHERE us.user_id = $1
+         ORDER BY s.type, s.name`,
+        [req.user.id]
+      );
+    } else {
+      // Students: their grade's class/subject spaces + all clubs
+      rows = await query(
+        `SELECT * FROM spaces
+         WHERE type = 'club'
+            OR (type IN ('class','subject') AND grade = $1)
+         ORDER BY type, name`,
+        [req.user.grade]
       );
     }
     res.json(rows);
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to load spaces" });
   }
 });
@@ -45,13 +63,9 @@ router.get("/posts", auth, async (req, res) => {
     sql += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const posts = await query(sql, params);
-    const isPrivileged = req.user.role === "teacher" || req.user.role === "admin";
-    const sanitized = posts.map((p) =>
-      p.is_anonymous && !isPrivileged ? { ...p, author_name: "Anonymous", author_id: null } : p
-    );
-    res.json(sanitized);
+    res.json(posts.map((p) => sanitizePost(p, req.user.role)));
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to load posts" });
   }
 });
@@ -62,6 +76,12 @@ router.get("/posts/feed", auth, async (req, res) => {
     let spaceIds;
     if (req.user.role === "admin") {
       const rows = await query("SELECT id FROM spaces");
+      spaceIds = rows.map((r) => r.id);
+    } else if (req.user.role === "teacher") {
+      const rows = await query(
+        "SELECT space_id AS id FROM user_spaces WHERE user_id = $1",
+        [req.user.id]
+      );
       spaceIds = rows.map((r) => r.id);
     } else {
       const rows = await query(
@@ -79,13 +99,9 @@ router.get("/posts/feed", auth, async (req, res) => {
       spaceIds
     );
 
-    const isPrivileged = req.user.role === "teacher" || req.user.role === "admin";
-    const sanitized = posts.map((p) =>
-      p.is_anonymous && !isPrivileged ? { ...p, author_name: "Anonymous", author_id: null } : p
-    );
-    res.json(sanitized);
+    res.json(posts.map((p) => sanitizePost(p, req.user.role)));
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to load feed" });
   }
 });
@@ -110,15 +126,19 @@ router.post("/posts", auth, async (req, res) => {
 
     const anonymous = isAnonymous ? 1 : 0;
     const authorName = isAnonymous ? "Anonymous" : req.user.name;
+    const clientIp = req.clientIp || req.ip;
 
     const result = await pool.query(
-      `INSERT INTO posts (space_id, section, title, content, author_id, author_name, author_role, is_anonymous)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [spaceId, section, title, content, req.user.id, authorName, req.user.role, anonymous]
+      `INSERT INTO posts (space_id, section, title, content, author_id, author_name, author_role, is_anonymous, author_ip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [spaceId, section, title, content, req.user.id, authorName, req.user.role, anonymous, clientIp]
     );
-    res.status(201).json(result.rows[0]);
+    const post = result.rows[0];
+
+    req.log && req.log.info({ event: "post_created", postId: post.id, userId: req.user.id, spaceId, section, isAnonymous: anonymous });
+    res.status(201).json(sanitizePost(post, req.user.role));
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to create post" });
   }
 });
@@ -134,9 +154,10 @@ router.delete("/posts/:id", auth, async (req, res) => {
     }
 
     await pool.query("DELETE FROM posts WHERE id = $1", [req.params.id]);
+    req.log && req.log.info({ event: "post_deleted", postId: Number(req.params.id), byUserId: req.user.id });
     res.json({ ok: true });
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to delete post" });
   }
 });

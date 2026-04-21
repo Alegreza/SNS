@@ -15,13 +15,15 @@ router.get("/", auth, async (req, res) => {
       [postId]
     );
 
-    const isPrivileged = req.user.role === "teacher" || req.user.role === "admin";
+    const isAdmin = req.user.role === "admin";
     const sanitized = comments.map((c) =>
-      c.is_anonymous && !isPrivileged ? { ...c, author_name: "Anonymous", author_id: null } : c
+      c.is_anonymous && !isAdmin
+        ? { ...c, author_name: "Anonymous", author_id: null, author_ip: null }
+        : c
     );
     res.json(sanitized);
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to load comments" });
   }
 });
@@ -45,13 +47,14 @@ router.post("/", auth, async (req, res) => {
 
     const anonymous = isAnonymous ? 1 : 0;
     const authorName = isAnonymous ? "Anonymous" : req.user.name;
+    const clientIp = req.clientIp || req.ip;
 
     await client.query("BEGIN");
 
     const commentResult = await client.query(
-      `INSERT INTO comments (post_id, author_id, author_name, author_role, is_anonymous, content)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [postId, req.user.id, authorName, req.user.role, anonymous, content.trim()]
+      `INSERT INTO comments (post_id, author_id, author_name, author_role, is_anonymous, content, author_ip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [postId, req.user.id, authorName, req.user.role, anonymous, content.trim(), clientIp]
     );
     const comment = commentResult.rows[0];
 
@@ -67,10 +70,19 @@ router.post("/", auth, async (req, res) => {
     }
 
     await client.query("COMMIT");
-    res.status(201).json(comment);
+
+    req.log && req.log.info({ event: "comment_created", commentId: comment.id, postId, userId: req.user.id, isAnonymous: anonymous });
+
+    // Return sanitized version to non-admins
+    const isAdmin = req.user.role === "admin";
+    res.status(201).json(
+      comment.is_anonymous && !isAdmin
+        ? { ...comment, author_name: "Anonymous", author_id: null, author_ip: null }
+        : comment
+    );
   } catch (e) {
     await client.query("ROLLBACK");
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to post comment" });
   } finally {
     client.release();

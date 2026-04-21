@@ -4,159 +4,171 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 
 ## Tech Stack
 
-- **Frontend**: Vanilla JS (no build step, no framework). Single IIFE in `src/app.js`. Must stay ES5-compatible for `file://` fallback.
+- **Frontend**: Vanilla JS (no build step, IIFE wrapper). Single file `src/app.js`. ES5-compatible for `file://` fallback.
 - **Backend**: Node.js + Express, port 3000
-- **Database**: SQLite via `better-sqlite3` (synchronous API)
-- **Auth**: JWT (stored in localStorage), Google OAuth, Microsoft MSAL (Azure AD)
-- **Deploy**: Render.com via `render.yaml`
+- **Database**: PostgreSQL via `pg` pool (Render managed DB `kobe-db`)
+- **Auth**: JWT (localStorage), Google OAuth, Microsoft MSAL (Azure AD) with JWKS signature verification
+- **Logging**: `pino` + `pino-http` (JSON structured logs on Render stdout)
+- **Deploy**: Render.com via `render.yaml` (web service + PostgreSQL)
 
 ## Project Structure
 
 ```
 01. Kobe/
-├── index.html          # SPA entry point
+├── index.html              # SPA entry point (Noto Sans KR via Google Fonts)
+├── render.yaml             # Render: web service + PostgreSQL kobe-db
+├── .env.example            # Full env checklist
 ├── src/
-│   ├── app.js          # Entire frontend (state + UI + event handlers)
-│   ├── styles.css      # All CSS (CSS variables, mobile-first)
-│   ├── api-config.js   # Sets window.API_BASE
-│   ├── auth-config.js  # Google OAuth config (clientId empty — not yet set)
-│   └── msal-config.js  # Microsoft MSAL config (clientId set)
+│   ├── app.js              # Entire frontend (state + UI + event handlers)
+│   ├── styles.css          # Everytime-style: red accent, sidebar, dense cards
+│   ├── api-config.js       # Sets window.API_BASE
+│   ├── auth-config.js      # Google OAuth config
+│   └── msal-config.js      # Microsoft MSAL config
 └── server/
-    ├── index.js        # Express app
-    ├── db.js           # SQLite schema + migrations + seeding
-    ├── config.js       # Env-based config
-    ├── middleware/auth.js
+    ├── index.js            # Express: pino-http, trust proxy, IP middleware, rate limit
+    ├── db.js               # PostgreSQL schema + migrations + seeding (async)
+    ├── config.js           # Env-based config
+    ├── middleware/
+    │   ├── auth.js         # JWT Bearer + cookie auth
+    │   └── adminAuth.js    # Admin role guard
     └── routes/
-        ├── auth.js     # /api/auth/* (signup, login, google, microsoft, me)
-        └── posts.js    # /api/spaces, /api/posts, /api/posts/feed
+        ├── auth.js         # /api/auth/* (signup, login, google, microsoft, me)
+        ├── posts.js        # /api/spaces, /api/posts, /api/posts/feed
+        ├── comments.js     # /api/posts/:id/comments
+        ├── notifications.js# /api/notifications
+        └── admin.js        # /api/admin/* (users, posts, spaces/teacher assignment)
 ```
 
-## Core Features
+## DB Schema (PostgreSQL)
+
+- `users` — id, email, username, name, password_hash, role, grade, verification_status, ...
+- `user_providers` — OAuth provider links (google, microsoft, email)
+- `user_spaces` — teacher→space assignment (students filtered by grade logic)
+- `spaces` — id(text), type(class|subject|club), name, grade
+- `posts` — id, space_id, section, title, content, author_id, author_name, author_role, is_anonymous, **author_ip**, created_at
+- `comments` — id, post_id, author_id, author_name, author_role, is_anonymous, content, **author_ip**, created_at
+- `notifications` — id, user_id, type, post_id, actor_name, message, is_read, created_at
+- `uploads` — student ID photos
+
+## Core Features (Implemented)
 
 - **Spaces**: Class (per grade), Subject (per grade), Club (all grades)
-- **Sections per space**: Announcements & Assignments / Questions / Anonymous & Vent
-- **Access control**: Teachers cannot post in "Anonymous / Vent" (student-only)
+- **Sections**: Announcements & Assignments / Questions / Anonymous & Vent
+- **Access control**:
+  - Students see grade-matched class/subject + all clubs
+  - Teachers see only spaces assigned via `user_spaces` (admin assigns)
+  - Admin sees everything
+  - Teachers cannot post in "Anonymous / Vent"
 - **Verification**: manual (admin approves), student_id (photo upload), school_sso (placeholder)
 - **Roles**: student / teacher / admin
+- **Comments + Notifications**: comment on posts triggers notification to post author
+- **Admin capabilities**:
+  - 회원 관리: list/approve/reject users by verification status
+  - 게시물 관리: view all posts with **real author name + IP** (including anonymous), delete posts
+  - 공간 배정: assign/remove teachers to specific spaces
+- **IP tracking**: every post and comment stores `author_ip` (X-Forwarded-For via Render proxy)
+- **Anonymous reveal**: only admin receives real `author_name` + `author_ip` for anonymous posts/comments
+- **Rate limiting**: 100 req / 15 min on `/api/*`
+- **Logging**: pino structured JSON logs; auth events, admin actions, errors all logged
+
+## Design (Everytime-style)
+
+- Red primary: `#e53935`
+- Top sticky navbar (red), left sidebar board list, dense post card list
+- Post card: section badge + title + [comment count] / excerpt / author · date
+- Admin reveal badge: purple `🔍 realname · IP: x.x.x.x`
+- Noto Sans KR font via Google Fonts CDN
+- Mobile: sidebar stacks above content
 
 ## Coding Conventions
 
-- Frontend (`src/app.js`): no ES modules, no `import/export`, IIFE wrapper. Use `var`/`let`/`const` freely inside.
-- All DOM manipulation is imperative (no virtual DOM). `el(tag, cls)` helper creates elements.
-- State lives in `userState` and `appViewState` objects inside the IIFE.
-- API calls go through `apiCall(path, options)` which attaches the JWT header automatically.
-- Data loaded from API is cached in `spaces[]`, `posts[]`, `homeFeed[]` arrays.
-- Backend uses synchronous `better-sqlite3` — no async/await in DB calls.
-- All routes use `auth` middleware from `server/middleware/auth.js`.
-- JWT payload includes: `userId`, `id`, `email`, `role`, `grade`, `name`.
+- Frontend (`src/app.js`): no ES modules, IIFE wrapper. `var`/`let`/`const` freely inside.
+- DOM manipulation imperative. `el(tag, cls)` helper creates elements.
+- State: `userState` + `appViewState` inside IIFE.
+- API calls via `apiCall(path, options)` — attaches JWT header automatically.
+- Backend: async/await (PostgreSQL `pg` pool). `query`, `queryOne`, `run` wrappers in `db.js`.
+- All routes use `auth` middleware. Admin routes additionally use `adminAuth`.
+- JWT payload: `userId`, `id`, `email`, `role`, `grade`, `name`.
+- Logging: use `req.log.info/error` (pino) in routes, not `console.*`.
 
 ## Key Constraints
 
-- No npm build step — frontend files are served as-is by Express static middleware.
-- SQLite DB path: `server/data/kobe.db` — ephemeral on Render unless Persistent Disk is added.
-- Default admin: email `admin`, password `admin` (seeded in `db.js`) — change before production.
-- Google OAuth Client ID is currently empty in `src/auth-config.js` — Google login won't work until set.
-- Microsoft MSAL token validation is simplified (no signature check) — needs proper validation for production.
+- No npm build step — frontend files served as-is by Express static middleware.
+- DB: PostgreSQL on Render (persistent, no data loss on redeploy).
+- Default admin: email `admin`, password `admin` — **change before production** (startup warning printed).
+- Google OAuth Client ID is currently empty in `src/auth-config.js`.
+- Microsoft MSAL: JWKS signature verification implemented (jwks-rsa).
+- `author_ip` is stored raw — treat as PII, only expose to admin role.
+
+## Environment Variables (.env.example)
+
+```
+PORT=3000
+DATABASE_URL=                   # Render Postgres internal URL
+JWT_SECRET=                     # openssl rand -hex 32
+JWT_EXPIRES_IN=30d
+GOOGLE_CLIENT_ID=               # console.cloud.google.com
+MICROSOFT_CLIENT_ID=            # portal.azure.com
+UPLOAD_DIR=./data/uploads
+```
 
 ## GPT 협업
 
-이 프로젝트는 Claude Code + GPT-4o 듀얼 에이전트 방식으로 작업합니다.
-
-- MCP 서버 `openai-gpt`가 등록되어 있음 (`~/.claude/settings.json` 및 프로젝트 루트 `.mcp.json`)
-- `ask_gpt` 툴로 GPT에게 의견을 물어볼 수 있음
-- **작업 시작 시**: 구현 방향을 정하기 전에 GPT 의견을 먼저 구할 것
-- **작업 중**: 중요한 설계 결정이나 트레이드오프가 있을 때 GPT에게 검토 요청
-- **작업 완료 후**: GPT에게 코드 리뷰 요청 후 마무리
-
-```js
-// 사용 예시 — 세션 시작 시
-ask_gpt("Phase 1 관리자 대시보드 구현 방향에 대해 의견 줘. [컨텍스트 요약]")
-```
+- MCP 서버 `openai-gpt` 등록됨 (`~/.claude/settings.json` 및 `.mcp.json`)
+- `ask_gpt` 툴로 GPT에게 의견 요청 가능
+- **작업 시작 시**: 구현 방향 GPT 검토 먼저
+- **설계 결정 시**: GPT 리뷰 후 진행
 
 ---
 
 ## Development Roadmap
 
-각 Phase는 독립 세션에서 진행. 이전 Phase가 완료된 후 새 세션을 열고 아래 "시작 방법"을 그대로 붙여넣어 시작하면 됩니다.
+### ✅ Phase 1 — 인증 완성 [완료]
+- `server/routes/admin.js`: `GET /api/admin/users`, `PATCH /api/admin/users/:id/verify`
+- 프론트 Profile 탭: 인증 상태 배지 (pending / approved / rejected)
+- 프론트 Admin 탭: 대기 중인 유저 목록 + 승인/거부
 
-### Phase 1 — 인증 완성 [ ]
-**목표**: 가입한 유저가 자신의 상태를 알 수 있고, 관리자가 승인/거부할 수 있다.
+### ✅ Phase 2 — 소셜 기능 [완료]
+- `comments` 테이블 + `GET/POST /api/posts/:id/comments`
+- `notifications` 테이블 + `GET /api/notifications`, `PATCH` read 처리
+- 프론트: 포스트 카드 댓글 토글 + 댓글 폼
+- 프론트: Notifications 탭 실시간 폴링 (15초)
 
-**작업 목록**:
-- [ ] `server/routes/admin.js` 생성: `GET /api/admin/users`, `PATCH /api/admin/users/:id/verify`
-- [ ] 프론트 Profile 탭에 인증 상태 뱃지 표시 (pending / approved / rejected)
-- [ ] 프론트 관리자 전용 탭 또는 모달: 대기 중인 유저 목록 + 승인/거부 버튼
-- [ ] `server/index.js`에 admin 라우트 등록
+### ✅ Phase 3 — 보안 강화 [완료]
+- Microsoft 토큰 JWKS 서명 검증 (`jwks-rsa`)
+- `express-rate-limit`: 100req/15min on `/api/*`
+- `.env.example` 전체 환경변수 체크리스트
+- 초기 실행 시 admin 기본 비번 경고 (`bcrypt.compare`)
 
-**격리 범위**: `server/routes/admin.js` 신규 파일만 건드림. 기존 라우트 수정 없음.
+### ✅ Phase 4 — 프로덕션 준비 [완료]
+- `render.yaml`: PostgreSQL 서비스(`kobe-db`) + `DATABASE_URL` 연동
+- DB: SQLite → PostgreSQL 전환 (데이터 영속성 확보)
+- `trust proxy 1` + X-Forwarded-For IP 추출 미들웨어
+- pino + pino-http 구조화 로그
 
-**세션 시작 방법**:
-```
-CLAUDE.md 읽고 Phase 1 작업 시작해줘.
-관리자 대시보드(유저 승인/거부)랑 프론트 인증 상태 표시가 목표야.
-작업 전에 GPT한테 구현 방향 먼저 물어보고, 설계 결정마다 같이 검토해줘.
-```
-
----
-
-### Phase 2 — 소셜 기능 [ ]
-**목표**: 포스트에 댓글을 달 수 있고, 댓글이 달리면 알림이 생긴다.
-
-**작업 목록**:
-- [ ] DB에 `comments` 테이블 추가 (`db.js` 수정)
-- [ ] `server/routes/comments.js` 생성: `GET /api/posts/:id/comments`, `POST /api/posts/:id/comments`
-- [ ] DB에 `notifications` 테이블 추가
-- [ ] `server/routes/notifications.js` 생성: `GET /api/notifications` (폴링 방식)
-- [ ] 프론트: 포스트 카드에 댓글 섹션 추가
-- [ ] 프론트: Notifications 탭을 실제 API 연동으로 전환
-
-**격리 범위**: `comments`, `notifications` 테이블과 라우트만 신규 추가. `posts` 테이블은 FK 참조만.
-
-**세션 시작 방법**:
-```
-CLAUDE.md 읽고 Phase 2 작업 시작해줘.
-포스트 댓글 기능이랑 알림 API 구현이 목표야.
-작업 전에 GPT한테 구현 방향 먼저 물어보고, 설계 결정마다 같이 검토해줘.
-```
+### ✅ Phase 5 — 디자인·로그·보안 심화 [완료]
+- **디자인**: 에브리타임 스타일 (빨간 accent, navbar, 사이드바, 조밀한 카드)
+- **Space 접근 제어**: 교사 → `user_spaces` 배정 기반 / 학생 → grade 기반
+- **IP 추적**: posts·comments `author_ip` 저장, 어드민만 조회 가능
+- **익명 실명 공개**: 어드민에게 익명 글의 실제 작성자 + IP 노출
+- **Admin 탭 확장**: 회원관리 / 게시물관리(IP조회·삭제) / 공간배정(교사 배정)
+- **pino 로그**: auth 이벤트, admin 액션, 에러 구조화 기록
 
 ---
 
-### Phase 3 — 보안 강화 [ ]
-**목표**: Google 로그인이 실제로 작동하고, Microsoft 토큰이 안전하게 검증된다.
+## 다음 세션 시작 방법
 
-**작업 목록**:
-- [ ] Google Cloud Console에서 OAuth Client ID 발급 (외부 작업)
-- [ ] `src/auth-config.js`에 Google Client ID 입력
-- [ ] `server/config.js`에 `GOOGLE_CLIENT_ID` 환경변수 연동 확인
-- [ ] `server/routes/auth.js`의 Microsoft 토큰 검증을 JWKS 서명 검증으로 교체
-- [ ] `.env.example` 업데이트
-
-**격리 범위**: `src/auth-config.js`, `server/routes/auth.js` 내 Microsoft 검증 로직만 수정.
-
-**세션 시작 방법**:
 ```
-CLAUDE.md 읽고 Phase 3 작업 시작해줘.
-Google OAuth 설정이랑 Microsoft 토큰 서명 검증이 목표야.
+CLAUDE.md 읽고 다음 Phase 작업 시작해줘.
 작업 전에 GPT한테 구현 방향 먼저 물어보고, 설계 결정마다 같이 검토해줘.
 ```
 
----
+## 남은 과제 (미구현)
 
-### Phase 4 — 프로덕션 준비 [ ]
-**목표**: Render 배포 시 데이터가 유실되지 않고, 보안 기본값이 설정된다.
-
-**작업 목록**:
-- [ ] Render Persistent Disk 설정 또는 PostgreSQL 전환 결정
-- [ ] `render.yaml` 업데이트 (Persistent Disk 마운트 또는 PostgreSQL 서비스 추가)
-- [ ] 기본 admin 계정 교체 플로우 (초기 실행 시 강제 비번 변경)
-- [ ] 환경변수 체크리스트 (`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `MICROSOFT_CLIENT_ID`)
-- [ ] Rate limiting 추가 (`express-rate-limit`)
-
-**격리 범위**: 인프라 설정과 `render.yaml`만 건드림. 앱 로직 변경 최소화.
-
-**세션 시작 방법**:
-```
-CLAUDE.md 읽고 Phase 4 작업 시작해줘.
-Render 프로덕션 배포 안정화가 목표야.
-작업 전에 GPT한테 구현 방향 먼저 물어보고, 설계 결정마다 같이 검토해줘.
-```
+- Google OAuth Client ID 발급 및 `src/auth-config.js` 설정 (외부 작업)
+- XSS 방지: DOMPurify로 포스트/댓글 내용 sanitize
+- CSP 헤더: `helmet.js` 적용
+- JWT → HttpOnly Cookie 전환 (현재 localStorage)
+- 다크 모드
+- 마이크로 인터랙션 (CSS transitions)
+- 로그 보존 기간 정책 (Render 로그 rotation)

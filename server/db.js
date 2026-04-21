@@ -76,6 +76,7 @@ async function initDb() {
       author_name TEXT NOT NULL,
       author_role TEXT NOT NULL,
       is_anonymous INTEGER NOT NULL DEFAULT 0,
+      author_ip VARCHAR(45),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -87,7 +88,15 @@ async function initDb() {
       author_role TEXT NOT NULL,
       is_anonymous INTEGER NOT NULL DEFAULT 0,
       content TEXT NOT NULL,
+      author_ip VARCHAR(45),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    -- Teacher/club space assignments (students auto-assigned by grade logic)
+    CREATE TABLE IF NOT EXISTS user_spaces (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      PRIMARY KEY (user_id, space_id)
     );
 
     CREATE TABLE IF NOT EXISTS notifications (
@@ -109,6 +118,10 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read, created_at DESC);
   `);
+
+  // Idempotent migrations for existing deployments
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_ip VARCHAR(45)`);
+  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_ip VARCHAR(45)`);
 
   // Seed default spaces
   const defaultSpaces = [
@@ -140,6 +153,18 @@ async function initDb() {
       "INSERT INTO user_providers (user_id, provider, provider_user_id) VALUES ($1, 'email', $2)",
       [userId, "admin"]
     );
+  }
+
+  // Warn if admin password is still the default
+  const adminUser = await queryOne("SELECT password_hash FROM users WHERE email = $1", ["admin"]);
+  if (adminUser && adminUser.password_hash) {
+    const isDefault = await bcrypt.compare("admin", adminUser.password_hash);
+    if (isDefault) {
+      console.warn(
+        "\n⚠️  SECURITY WARNING: Admin account is using the default password 'admin'." +
+        "\n   Change it immediately before going to production.\n"
+      );
+    }
   }
 
   console.log("DB initialized");
