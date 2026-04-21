@@ -20,7 +20,7 @@
   const API = (window.API_BASE || "") + "/api";
 
   function apiCall(path, options) {
-    var token = localStorage.getItem("kobe_token");
+    var token = localStorage.getItem("cksns_token");
     var headers = options && options.headers || {};
     if (token) headers["Authorization"] = "Bearer " + token;
     if (options && options.body && typeof options.body === "object" && !(options.body instanceof FormData)) {
@@ -48,7 +48,7 @@
   }
 
   function restoreSession() {
-    var token = localStorage.getItem("kobe_token");
+    var token = localStorage.getItem("cksns_token");
     if (!token) return Promise.resolve(false);
     return apiCall("/auth/me").then(function (user) {
       loginFromApiUser(user);
@@ -57,7 +57,7 @@
       startNotifPolling();
       return true;
     }).catch(function () {
-      localStorage.removeItem("kobe_token");
+      localStorage.removeItem("cksns_token");
       return false;
     });
   }
@@ -130,7 +130,7 @@
   }
 
   function logout() {
-    localStorage.removeItem("kobe_token");
+    localStorage.removeItem("cksns_token");
     userState.isAuthenticated = false;
     userState.name = "";
     userState.role = null;
@@ -321,7 +321,7 @@
 
     apiCall("/auth/login", { method: "POST", body: { login: login, password: password } })
       .then(function (res) {
-        localStorage.setItem("kobe_token", res.token);
+        localStorage.setItem("cksns_token", res.token);
         loginFromApiUser(res.user);
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
@@ -373,7 +373,7 @@
 
     fetch(API + "/auth/signup", {
       method: "POST",
-      headers: { "Authorization": localStorage.getItem("kobe_token") ? "Bearer " + localStorage.getItem("kobe_token") : "" },
+      headers: { "Authorization": localStorage.getItem("cksns_token") ? "Bearer " + localStorage.getItem("cksns_token") : "" },
       body: body
     })
       .then(function (r) {
@@ -381,7 +381,7 @@
         return r.json();
       })
       .then(function (res) {
-        localStorage.setItem("kobe_token", res.token);
+        localStorage.setItem("cksns_token", res.token);
         loginFromApiUser(res.user);
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
@@ -443,7 +443,7 @@
       }
       apiCall("/auth/microsoft", { method: "POST", body: { access_token: token } })
         .then(function (res) {
-          localStorage.setItem("kobe_token", res.token);
+          localStorage.setItem("cksns_token", res.token);
           loginFromApiUser(res.user);
           appViewState.authScreen = "choose";
           appViewState.activeTab = "home";
@@ -513,7 +513,7 @@
         return r.json();
       })
       .then(function (res) {
-        localStorage.setItem("kobe_token", res.token);
+        localStorage.setItem("cksns_token", res.token);
         loginFromApiUser(res.user);
         appViewState.pendingMsAccount = null;
         appViewState.authScreen = "choose";
@@ -634,7 +634,7 @@
     var commentArea = el("div", "comment-area");
 
     var toggleBtn = el("button", "comment-toggle-btn");
-    toggleBtn.textContent = "댓글 " + commentList.length + "개" + (expanded ? " ▲" : " ▼");
+    toggleBtn.textContent = commentList.length + " comment" + (commentList.length !== 1 ? "s" : "") + (expanded ? " ▲" : " ▼");
     toggleBtn.addEventListener("click", function () {
       appViewState.expandedComments[post.id] = !appViewState.expandedComments[post.id];
       if (appViewState.expandedComments[post.id] && !appViewState.commentsByPost[post.id]) {
@@ -674,7 +674,7 @@
         });
       } else {
         var noC = el("p", "muted");
-        noC.textContent = "아직 댓글이 없어요.";
+        noC.textContent = "No comments yet.";
         commentSection.appendChild(noC);
       }
 
@@ -682,9 +682,9 @@
         var cForm = el("form", "comment-form");
         var isAnonSection = post.section === "Anonymous / Vent";
         cForm.innerHTML =
-          '<textarea name="content" rows="2" placeholder="댓글 작성…" required></textarea>' +
-          (isAnonSection ? '<label class="checkbox-inline"><input type="checkbox" name="isAnonymous" checked /> 익명</label>' : '') +
-          '<button type="submit" class="primary-button small">등록</button>';
+          '<textarea name="content" rows="2" placeholder="Write a comment…" required></textarea>' +
+          (isAnonSection ? '<label class="checkbox-inline"><input type="checkbox" name="isAnonymous" checked /> Anonymous</label>' : '') +
+          '<button type="submit" class="primary-button small">Reply</button>';
         cForm.addEventListener("submit", function (ev) {
           ev.preventDefault();
           var content = (cForm.content && cForm.content.value || "").trim();
@@ -722,7 +722,7 @@
     var nav = el("nav", "top-navbar");
 
     var logo = el("div", "navbar-logo");
-    logo.innerHTML = "Kobe<span>Cranbrook School</span>";
+    logo.innerHTML = "CKSNS<span>Cranbrook School</span>";
     logo.addEventListener("click", function () { setActiveTab("home"); });
     nav.appendChild(logo);
 
@@ -818,13 +818,13 @@
       t.textContent = "Kobe";
       t.style.color = "var(--color-primary)";
       var d = el("p", "login-sub");
-      d.textContent = "Cranbrook School 전용 커뮤니티";
+      d.textContent = "Cranbrook School exclusive community";
       var logBtn = el("button", "primary-button");
-      logBtn.textContent = "로그인";
+      logBtn.textContent = "Log in";
       logBtn.style.marginRight = "0.5rem";
       logBtn.addEventListener("click", function () { appViewState.authScreen = "login"; render(); });
       var signBtn = el("button", "ghost-button");
-      signBtn.textContent = "회원가입";
+      signBtn.textContent = "Sign up";
       signBtn.addEventListener("click", function () { appViewState.authScreen = "signup"; render(); });
       card.appendChild(t);
       card.appendChild(d);
@@ -841,16 +841,16 @@
       var back = el("a");
       back.href = "#";
       back.className = "muted";
-      back.textContent = "← 뒤로";
+      back.textContent = "← Back";
       back.style.display = "block";
       back.style.marginBottom = "0.5rem";
       back.addEventListener("click", function (e) { e.preventDefault(); appViewState.authScreen = "choose"; render(); });
       var t2 = el("h2");
-      t2.textContent = "로그인";
+      t2.textContent = "Log in";
       var form = el("form", "form-grid");
-      form.innerHTML = '<div class="form-field"><label>이메일 또는 사용자명</label><input name="login" type="text" placeholder="이메일 또는 사용자명" required /></div>' +
-        '<div class="form-field"><label>비밀번호</label><input name="password" type="password" required /></div>' +
-        '<div class="form-actions"><button type="submit" class="primary-button">로그인</button></div>';
+      form.innerHTML = '<div class="form-field"><label>Email or username</label><input name="login" type="text" placeholder="Email or username" required /></div>' +
+        '<div class="form-field"><label>Password</label><input name="password" type="password" required /></div>' +
+        '<div class="form-actions"><button type="submit" class="primary-button">Log in</button></div>';
       form.addEventListener("submit", handleLoginSubmit);
       card.appendChild(back);
       card.appendChild(t2);
@@ -871,12 +871,12 @@
       var back2 = el("a");
       back2.href = "#";
       back2.className = "muted";
-      back2.textContent = "← 뒤로";
+      back2.textContent = "← Back";
       back2.style.display = "block";
       back2.style.marginBottom = "0.5rem";
       back2.addEventListener("click", function (e) { e.preventDefault(); appViewState.authScreen = "choose"; render(); });
       var t3 = el("h2");
-      t3.textContent = "회원가입";
+      t3.textContent = "Sign up";
       card.appendChild(back2);
       card.appendChild(t3);
       if (msalReady) {
@@ -886,19 +886,19 @@
         msSignup.addEventListener("click", handleMicrosoftLogin);
         card.appendChild(msSignup);
         var orP = el("p", "muted");
-        orP.textContent = "또는 이메일로:";
+        orP.textContent = "Or with email:";
         card.appendChild(orP);
       }
       var signupForm = el("form", "form-grid");
-      signupForm.innerHTML = '<div class="form-field"><label>이메일</label><input name="email" type="email" required /></div>' +
-        '<div class="form-field"><label>사용자명 (선택)</label><input name="username" type="text" placeholder="이메일 또는 사용자명으로 로그인" /></div>' +
-        '<div class="form-field"><label>비밀번호</label><input name="password" type="password" required /></div>' +
-        '<div class="form-field"><label>이름</label><input name="name" required /></div>' +
-        '<div class="form-field"><label>학교 이메일 (선택)</label><input name="school_email" type="email" /></div>' +
-        '<div class="form-field"><label>역할</label><select name="role" required><option value="">선택</option><option value="student">학생</option><option value="teacher">교사</option></select></div>' +
-        '<div class="form-field"><label>학년</label><select name="grade" required><option value="">선택</option><option value="9">9학년</option><option value="10">10학년</option><option value="11">11학년</option><option value="12">12학년</option></select></div>' +
-        '<div class="form-field"><label>학교 인증 방법</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> 수동: ' + esc(adminEmail) + ' 에게 연락</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> 학생증 사진 업로드</label><input type="file" name="student_id" accept="image/*" /></div>' +
-        '<div class="form-actions"><button type="submit" class="primary-button">가입하기</button></div>';
+      signupForm.innerHTML = '<div class="form-field"><label>Email</label><input name="email" type="email" required /></div>' +
+        '<div class="form-field"><label>Username (optional)</label><input name="username" type="text" placeholder="Login with email or username" /></div>' +
+        '<div class="form-field"><label>Password</label><input name="password" type="password" required /></div>' +
+        '<div class="form-field"><label>Name</label><input name="name" required /></div>' +
+        '<div class="form-field"><label>School email (optional)</label><input name="school_email" type="email" /></div>' +
+        '<div class="form-field"><label>Role</label><select name="role" required><option value="">Select</option><option value="student">Student</option><option value="teacher">Teacher</option></select></div>' +
+        '<div class="form-field"><label>Grade</label><select name="grade" required><option value="">Select</option><option value="9">Grade 9</option><option value="10">Grade 10</option><option value="11">Grade 11</option><option value="12">Grade 12</option></select></div>' +
+        '<div class="form-field"><label>School verification</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> Manual: ' + esc(adminEmail) + '</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> Upload student ID photo</label><input type="file" name="student_id" accept="image/*" /></div>' +
+        '<div class="form-actions"><button type="submit" class="primary-button">Sign up</button></div>';
       signupForm.addEventListener("submit", handleSignupSubmit);
       card.appendChild(signupForm);
       loginWrap.appendChild(card);
@@ -1003,7 +1003,7 @@
     // Group spaces by type
     var groups = { class: [], subject: [], club: [] };
     spacesToUse.forEach(function (s) { if (groups[s.type]) groups[s.type].push(s); });
-    var groupLabels = { class: "학년 게시판", subject: "과목 게시판", club: "동아리" };
+    var groupLabels = { class: "Class boards", subject: "Subject boards", club: "Clubs" };
 
     Object.keys(groups).forEach(function (type) {
       if (!groups[type].length) return;
@@ -1024,7 +1024,7 @@
 
     if (!activeSpace) {
       var mp = el("p", "muted");
-      mp.textContent = "왼쪽에서 게시판을 선택하세요.";
+      mp.textContent = "Select a board from the sidebar.";
       mainEl.appendChild(mp);
     } else {
       // Section tabs
@@ -1032,7 +1032,7 @@
       activeSpace.sections.forEach(function (section) {
         var btn = el("button", "section-tab" + (section === appViewState.activeSection ? " active" : ""));
         btn.textContent = section + (isStudentOnlySection(section) ? " 🔒" : "");
-        btn.title = isStudentOnlySection(section) ? "학생 전용 섹션" : "";
+        btn.title = isStudentOnlySection(section) ? "Student-only section" : "";
         btn.addEventListener("click", function () { setActiveSection(section); });
         st.appendChild(btn);
       });
@@ -1046,16 +1046,16 @@
         composer.appendChild(composerTitle);
         var form = el("form");
         form.innerHTML =
-          '<div class="form-field" style="margin-bottom:0.5rem"><input name="title" placeholder="제목" required /></div>' +
-          '<div class="form-field"><textarea name="content" rows="3" placeholder="내용을 입력하세요" required></textarea></div>' +
-          '<div class="composer-row"><label class="checkbox-inline"><input type="checkbox" name="isAnonymous" ' + (defAnon ? "checked" : "") + ' /> 익명</label>' +
-          '<button type="submit" class="primary-button small">등록</button></div>';
+          '<div class="form-field" style="margin-bottom:0.5rem"><input name="title" placeholder="Title" required /></div>' +
+          '<div class="form-field"><textarea name="content" rows="3" placeholder="Write your post…" required></textarea></div>' +
+          '<div class="composer-row"><label class="checkbox-inline"><input type="checkbox" name="isAnonymous" ' + (defAnon ? "checked" : "") + ' /> Anonymous</label>' +
+          '<button type="submit" class="primary-button small">Reply</button></div>';
         form.addEventListener("submit", handleCreatePost);
         composer.appendChild(form);
         mainEl.appendChild(composer);
       } else if (userState.isAuthenticated && !canUserPostInSection(appViewState.activeSection)) {
         var notice = el("div", "student-only-notice");
-        notice.textContent = "학생 전용 섹션입니다. 교사는 읽기만 가능합니다.";
+        notice.textContent = "This is a student-only section. Teachers can read but not post here.";
         mainEl.appendChild(notice);
       }
 
@@ -1070,7 +1070,7 @@
       if (postsInSpace.length === 0) {
         var np = el("p", "muted");
         np.style.padding = "1rem";
-        np.textContent = "아직 게시물이 없어요.";
+        np.textContent = "No posts yet.";
         postListEl.appendChild(np);
       } else {
         postsInSpace.forEach(function (post) {
@@ -1094,7 +1094,7 @@
     var lt = el("span", "post-list-title"); lt.textContent = "Q&A / Anonymous Vent";
     lh.appendChild(lt); listEl.appendChild(lh);
     if (feed.length === 0) {
-      var p = el("p", "muted"); p.style.padding = "1rem"; p.textContent = "아직 글이 없어요."; listEl.appendChild(p);
+      var p = el("p", "muted"); p.style.padding = "1rem"; p.textContent = "No posts yet."; listEl.appendChild(p);
     } else {
       feed.forEach(function (post) {
         var sn = spaces.filter(function (s) { return s.id === post.spaceId; })[0];
@@ -1109,11 +1109,11 @@
     var wrap = el("div", "app-wrapper");
     var card = el("section", "card");
     var header = el("div", "notif-header");
-    var t = el("h2"); t.textContent = "알림";
+    var t = el("h2"); t.textContent = "Notifications";
     header.appendChild(t);
     if (appViewState.notifications.some(function (n) { return !n.is_read; })) {
       var markAllBtn = el("button", "ghost-button small");
-      markAllBtn.textContent = "모두 읽음";
+      markAllBtn.textContent = "Mark all read";
       markAllBtn.addEventListener("click", function () { markAllNotificationsRead().then(render); });
       header.appendChild(markAllBtn);
     }
@@ -1121,7 +1121,7 @@
 
     var notifs = appViewState.notifications;
     if (notifs.length === 0) {
-      var p = el("p", "muted"); p.textContent = "알림이 없어요."; card.appendChild(p);
+      var p = el("p", "muted"); p.textContent = "No notifications yet."; card.appendChild(p);
     } else {
       var ul = el("ul", "notification-list");
       notifs.forEach(function (n) {
@@ -1132,7 +1132,7 @@
         li.appendChild(msg); li.appendChild(ts);
         if (!n.is_read) {
           var readBtn = el("button", "ghost-button tiny");
-          readBtn.textContent = "읽음";
+          readBtn.textContent = "Mark read";
           readBtn.addEventListener("click", function () { markNotificationRead(n.id).then(render); });
           li.appendChild(readBtn);
         }
@@ -1148,7 +1148,7 @@
     var wrap = el("div", "app-wrapper");
     var card = el("section", "card");
     var t = el("h2");
-    t.textContent = "프로필";
+    t.textContent = "Profile";
     card.appendChild(t);
     if (!userState.isAuthenticated) {
       var p = el("p", "muted");
@@ -1184,7 +1184,7 @@
       }
 
       var lb = el("button", "ghost-button");
-      lb.textContent = "로그아웃";
+      lb.textContent = "Sign out";
       lb.style.marginTop = "1rem";
       lb.addEventListener("click", handleLogoutClick);
       card.appendChild(lb);
@@ -1200,7 +1200,7 @@
     // Admin sub-tabs
     if (!appViewState.adminTab) appViewState.adminTab = "users";
     var tabBar = el("div", "admin-tabs");
-    [{ id: "users", label: "회원 관리" }, { id: "posts", label: "게시물 관리" }, { id: "spaces", label: "공간 배정" }].forEach(function (t) {
+    [{ id: "users", label: "Users" }, { id: "posts", label: "Posts" }, { id: "spaces", label: "Space Assignment" }].forEach(function (t) {
       var btn = el("button", "admin-tab-btn" + (appViewState.adminTab === t.id ? " active" : ""));
       btn.textContent = t.label;
       btn.addEventListener("click", function () { appViewState.adminTab = t.id; render(); });
@@ -1212,7 +1212,7 @@
       var filterWrap = el("div", "admin-filter");
       ["all", "pending", "approved", "rejected"].forEach(function (status) {
         var btn = el("button", (appViewState.adminFilter === status ? "primary-button" : "ghost-button") + " small");
-        btn.textContent = { all: "전체", pending: "대기", approved: "승인", rejected: "거절" }[status];
+        btn.textContent = { all: "All", pending: "Pending", approved: "Approved", rejected: "Rejected" }[status];
         btn.addEventListener("click", function () {
           appViewState.adminFilter = status;
           loadAdminUsers().then(render);
@@ -1223,17 +1223,17 @@
 
       var tableWrap = el("div", "admin-table-wrap");
       var loading = el("p", "muted");
-      loading.textContent = "불러오는 중…";
+      loading.textContent = "Loading…";
       tableWrap.appendChild(loading);
       card.appendChild(tableWrap);
 
       loadAdminUsers().then(function () {
         while (tableWrap.firstChild) tableWrap.removeChild(tableWrap.firstChild);
         if (!appViewState.adminUsers.length) {
-          var emp = el("p", "muted"); emp.textContent = "회원이 없습니다."; tableWrap.appendChild(emp); return;
+          var emp = el("p", "muted"); emp.textContent = "No users found."; tableWrap.appendChild(emp); return;
         }
         var table = el("table", "admin-table");
-        table.innerHTML = "<thead><tr><th>이름</th><th>이메일</th><th>역할</th><th>학년</th><th>인증방법</th><th>상태</th><th>액션</th></tr></thead>";
+        table.innerHTML = "<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Grade</th><th>Method</th><th>Status</th><th>Actions</th></tr></thead>";
         var tbody = document.createElement("tbody");
         appViewState.adminUsers.forEach(function (u) {
           var tr = document.createElement("tr");
@@ -1242,11 +1242,11 @@
           tr.innerHTML = "<td>" + esc(u.name) + "</td><td>" + esc(u.email) + "</td><td>" + esc(u.role) + "</td><td>" + esc(u.grade || "—") + "</td><td>" + esc(u.verification_method) + "</td><td><span class='verification-badge " + statusCls + "'>" + esc(u.verification_status) + "</span></td><td></td>";
           var ac = tr.cells[6];
           if (u.verification_status !== "approved") {
-            var ab = el("button", "primary-button admin-action-btn"); ab.textContent = "승인";
+            var ab = el("button", "primary-button admin-action-btn"); ab.textContent = "Approve";
             ab.addEventListener("click", function () { handleAdminVerify(u.id, "approved", tr); }); ac.appendChild(ab);
           }
           if (u.verification_status !== "rejected") {
-            var rb = el("button", "ghost-button admin-action-btn"); rb.textContent = "거절";
+            var rb = el("button", "ghost-button admin-action-btn"); rb.textContent = "Reject";
             rb.addEventListener("click", function () { handleAdminVerify(u.id, "rejected", tr); }); ac.appendChild(rb);
           }
           tbody.appendChild(tr);
@@ -1258,26 +1258,26 @@
 
     if (appViewState.adminTab === "posts") {
       var postsWrap = el("div", "admin-table-wrap");
-      var postsLoading = el("p", "muted"); postsLoading.textContent = "불러오는 중…";
+      var postsLoading = el("p", "muted"); postsLoading.textContent = "Loading…";
       postsWrap.appendChild(postsLoading);
       card.appendChild(postsWrap);
 
       apiCall("/admin/posts?limit=100").then(function (data) {
         while (postsWrap.firstChild) postsWrap.removeChild(postsWrap.firstChild);
-        if (!data.length) { var ep = el("p", "muted"); ep.textContent = "게시물이 없습니다."; postsWrap.appendChild(ep); return; }
+        if (!data.length) { var ep = el("p", "muted"); ep.textContent = "No posts found."; postsWrap.appendChild(ep); return; }
         var tbl = el("table", "admin-table");
-        tbl.innerHTML = "<thead><tr><th>#</th><th>공간</th><th>섹션</th><th>제목</th><th>작성자(실명)</th><th>IP</th><th>익명</th><th>날짜</th><th>액션</th></tr></thead>";
+        tbl.innerHTML = "<thead><tr><th>#</th><th>Space</th><th>Section</th><th>Title</th><th>Author (real)</th><th>IP</th><th>Anon</th><th>Date</th><th>Actions</th></tr></thead>";
         var tb = document.createElement("tbody");
         data.forEach(function (p) {
           var tr = document.createElement("tr");
           tr.innerHTML = "<td>" + p.id + "</td><td>" + esc(p.space_id) + "</td><td>" + esc(p.section.split(" ")[0]) + "</td><td>" + esc(p.title.slice(0, 30)) + "</td><td>" + esc(p.author_name) + "</td><td>" + esc(p.author_ip || "—") + "</td><td>" + (p.is_anonymous ? "✓" : "") + "</td><td>" + fmtDate(p.created_at) + "</td><td></td>";
           var dc = tr.cells[8];
-          var delBtn = el("button", "ghost-button admin-action-btn"); delBtn.textContent = "삭제";
+          var delBtn = el("button", "ghost-button admin-action-btn"); delBtn.textContent = "Delete";
           delBtn.addEventListener("click", function () {
-            if (!confirm("이 게시물을 삭제하시겠습니까?")) return;
+            if (!confirm("Delete this post?")) return;
             apiCall("/admin/posts/" + p.id, { method: "DELETE" }).then(function () {
               tr.remove();
-            }).catch(function (e) { alert(e.message || "삭제 실패"); });
+            }).catch(function (e) { alert(e.message || "Delete failed"); });
           });
           dc.appendChild(delBtn);
           tb.appendChild(tr);
@@ -1286,13 +1286,13 @@
         postsWrap.appendChild(tbl);
       }).catch(function () {
         while (postsWrap.firstChild) postsWrap.removeChild(postsWrap.firstChild);
-        var ep2 = el("p", "muted"); ep2.textContent = "로드 실패"; postsWrap.appendChild(ep2);
+        var ep2 = el("p", "muted"); ep2.textContent = "Failed to load"; postsWrap.appendChild(ep2);
       });
     }
 
     if (appViewState.adminTab === "spaces") {
       var spacesWrap = el("div", "admin-table-wrap");
-      var spacesLoading = el("p", "muted"); spacesLoading.textContent = "불러오는 중…";
+      var spacesLoading = el("p", "muted"); spacesLoading.textContent = "Loading…";
       spacesWrap.appendChild(spacesLoading);
       card.appendChild(spacesWrap);
 
@@ -1314,23 +1314,23 @@
           var teacherList = el("p", "muted");
           teacherList.style.margin = "0.3rem 0";
           teacherList.textContent = sp.teachers && sp.teachers.length
-            ? "담당 교사: " + sp.teachers.map(function (t) { return t.name; }).join(", ")
-            : "담당 교사 없음";
+            ? "Assigned teachers: " + sp.teachers.map(function (t) { return t.name; }).join(", ")
+            : "No teachers assigned";
           row.appendChild(teacherList);
 
           // Teacher assign select
           var sel = document.createElement("select");
           sel.style.cssText = "font-size:0.85rem;padding:0.25rem;margin-right:0.4rem;border:1px solid var(--color-border);border-radius:3px;";
-          var opt0 = document.createElement("option"); opt0.value = ""; opt0.textContent = "교사 선택…"; sel.appendChild(opt0);
+          var opt0 = document.createElement("option"); opt0.value = ""; opt0.textContent = "Select a teacher…"; sel.appendChild(opt0);
           allUsers.forEach(function (u) {
             var opt = document.createElement("option"); opt.value = u.id; opt.textContent = u.name + " (" + u.email + ")"; sel.appendChild(opt);
           });
-          var assignBtn = el("button", "primary-button small"); assignBtn.textContent = "배정";
+          var assignBtn = el("button", "primary-button small"); assignBtn.textContent = "Assign";
           assignBtn.addEventListener("click", function () {
             if (!sel.value) return;
             apiCall("/admin/spaces/" + sp.id + "/teachers/" + sel.value, { method: "PUT" }).then(function () {
               appViewState.adminTab = "spaces"; render();
-            }).catch(function (e) { alert(e.message || "배정 실패"); });
+            }).catch(function (e) { alert(e.message || "Assignment failed"); });
           });
           row.appendChild(sel);
           row.appendChild(assignBtn);
@@ -1338,12 +1338,12 @@
           // Remove buttons for existing teachers
           if (sp.teachers && sp.teachers.length) {
             sp.teachers.forEach(function (t) {
-              var removeBtn = el("button", "ghost-button small"); removeBtn.textContent = t.name + " 제거";
+              var removeBtn = el("button", "ghost-button small"); removeBtn.textContent = t.name + " Remove";
               removeBtn.style.marginLeft = "0.4rem";
               removeBtn.addEventListener("click", function () {
                 apiCall("/admin/spaces/" + sp.id + "/teachers/" + t.id, { method: "DELETE" }).then(function () {
                   appViewState.adminTab = "spaces"; render();
-                }).catch(function (e) { alert(e.message || "제거 실패"); });
+                }).catch(function (e) { alert(e.message || "Remove failed"); });
               });
               row.appendChild(removeBtn);
             });
@@ -1352,7 +1352,7 @@
         });
       }).catch(function () {
         while (spacesWrap.firstChild) spacesWrap.removeChild(spacesWrap.firstChild);
-        var ep3 = el("p", "muted"); ep3.textContent = "로드 실패"; spacesWrap.appendChild(ep3);
+        var ep3 = el("p", "muted"); ep3.textContent = "Failed to load"; spacesWrap.appendChild(ep3);
       });
     }
 

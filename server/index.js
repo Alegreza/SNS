@@ -1,5 +1,5 @@
 /**
- * Kobe server: Express API + static frontend.
+ * CKSNS server: Express API + static frontend.
  * Run: node index.js (from server/) or npm start (from project root)
  */
 
@@ -75,7 +75,7 @@ app.get("*", (req, res, next) => {
 initDb()
   .then(() => {
     app.listen(config.port, () => {
-      console.log(`Kobe server running at http://localhost:${config.port}`);
+      console.log(`CKSNS server running at http://localhost:${config.port}`);
     });
   })
   .catch((err) => {

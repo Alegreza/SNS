@@ -1,5 +1,5 @@
 {
-  "name": "school-private-sns-kobe",
+  "name": "cksns",
   "version": "0.1.0",
   "private": true,
   "description": "School-only SNS for high school. Grades 9-12, email or username login.",
