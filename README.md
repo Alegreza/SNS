@@ -1,6 +1,8 @@
-# School-Only SNS – Kobe
+# CKSNS – Cranbrook School SNS
 
-A closed SNS for high school (grades 9–12). Sign up with **email** or **username**, plus **Google** or **Microsoft**. School verification: manual (contact admin) or student ID upload.
+A closed, school-only SNS for high school (grades 9–12), live at [cksns.live](https://cksns.live). Sign up with **email** or **username**, plus **Google** or **Microsoft**. School verification: manual (contact admin) or student ID upload. Class/subject boards (per grade) and clubs, each with Announcements & Assignments / Questions / Anonymous & Vent sections — admins can also create boards with fully custom categories.
+
+Everytime (Korean university SNS)-inspired design: dense list-style feed, red accent, light/dark mode with a manual toggle and a per-user accent color picker.
 
 ## Quick start (local)
 
@@ -9,60 +11,54 @@ npm run install:server
 npm start
 ```
 
-Open `http://localhost:3000`
+Open `http://localhost:3000`. Copy `server/.env.example` to `server/.env` first and fill in `DATABASE_URL` (a Postgres connection string — see below) and `JWT_SECRET`.
 
-- Default admin: `admin` / `admin`
+There is no default admin account seeded with a known password — the first admin must be created directly in the database (or by promoting an existing verified user's `role` column to `'admin'`).
 
-## GitHub setup
+## Database
 
-1. Create a new repo on GitHub.
-2. In project root:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
-   git push -u origin main
-   ```
+**PostgreSQL, hosted on Supabase** — not the `render.yaml`-declared Render Postgres block, which is unused. `DATABASE_URL` is set directly in Render's dashboard env vars, pointing at the Supabase connection string. Local dev needs any reachable Postgres instance (Supabase, a local install, whatever) — the schema/migrations in `server/db.js` run automatically on boot.
 
 ## Deployment (Render)
 
-1. Push your code to GitHub.
-2. Go to [render.com](https://render.com) → New → Web Service.
-3. Connect your GitHub repo.
-4. Use settings (or `render.yaml`):
-   - **Build command:** `npm run install:server`
-   - **Start command:** `npm start`
-5. Add environment variables:
-   - `JWT_SECRET` – random string (generate on Render)
-   - `GOOGLE_CLIENT_ID`, `MICROSOFT_CLIENT_ID` (optional)
-6. Deploy.
+Already deployed and connected to GitHub — pushing to `main` auto-deploys to [cksns.live](https://cksns.live).
 
-**Note:** SQLite uses local storage. On Render, the DB is ephemeral unless you add a persistent disk. For long-term data, consider a managed DB later.
+- **Build command:** `npm run install:server`
+- **Start command:** `npm start`
+- Env vars (set in Render's dashboard, not `render.yaml`): `DATABASE_URL`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `MICROSOFT_CLIENT_ID`
+
+**Known limitation:** the Render web service is on the free tier, which spins down after ~15 minutes of inactivity and cold-starts on the next request. The Postgres pool has a 10s connection timeout so a slow/unreachable database now fails fast instead of hanging the whole server — but the underlying spin-down behavior itself only goes away on a paid Render plan.
 
 ## Config
 
-| Variable       | Description                          |
-|----------------|--------------------------------------|
-| `PORT`         | Server port (default 3000)           |
-| `JWT_SECRET`   | Secret for JWT (required in prod)    |
-| `GOOGLE_CLIENT_ID` | Google OAuth (optional)         |
-| `MICROSOFT_CLIENT_ID` | Microsoft OAuth (optional)  |
+| Variable | Description |
+|---|---|
+| `PORT` | Server port (default 3000) |
+| `DATABASE_URL` | Postgres connection string (required) |
+| `JWT_SECRET` | Secret for JWT (required in production — server refuses to boot without one) |
+| `GOOGLE_CLIENT_ID` | Google OAuth (optional — must match `src/auth-config.js`) |
+| `MICROSOFT_CLIENT_ID` | Microsoft OAuth (optional — must match `src/msal-config.js`) |
+| `ADMIN_EMAIL` | Contact email shown to new users for manual verification |
 
-Copy `server/.env.example` to `server/.env` for local dev.
+## Security
+
+- All post/comment content is sanitized server-side (`server/sanitize.js`, strips all HTML — this app has no rich-text support, so anything surviving would just show as literal tag text)
+- CSP headers via `helmet` (see `server/index.js` for the exact allowlist — Google Sign-In and Microsoft MSAL script/style/frame origins are explicitly permitted)
+- `author_ip` is stored on every post/comment and is admin-only — never exposed to other users, including on anonymous posts
+- Self-signup is restricted to `student`/`teacher` roles at the app layer (`SELF_SIGNUP_ROLES` in `server/routes/auth.js`) — the DB's own `CHECK` constraint permits `'admin'`, so this allowlist is the only thing preventing self-registered admin accounts
 
 ## Project layout
 
 ```
 ├── server/
-│   ├── index.js      # Express app
-│   ├── config.js     # Config from env
-│   ├── db.js         # SQLite + migrations
-│   ├── routes/       # API routes
-│   └── middleware/   # Auth middleware
-├── src/              # Frontend (app.js, styles, config)
+│   ├── index.js        # Express app, CSP/security headers, CORS, rate limiting
+│   ├── config.js        # Config from env
+│   ├── db.js            # Postgres schema + migrations + seeding
+│   ├── sanitize.js       # Server-side content sanitization (DOMPurify)
+│   ├── routes/           # API routes (auth, posts, comments, admin, notifications)
+│   └── middleware/       # Auth + admin-auth middleware
+├── src/                  # Frontend (app.js, styles.css, theme-init.js, config files)
 ├── index.html
-├── render.yaml       # Render deployment
+├── render.yaml           # Render deployment (databases: block is unused, see above)
 └── .gitignore
 ```

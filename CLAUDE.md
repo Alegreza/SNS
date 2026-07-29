@@ -15,7 +15,8 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 - **Database**: PostgreSQL via `pg` pool. **Actually hosted on Supabase, not Render** — `render.yaml` still declares an unused Render-managed `cksns-db`; the real `DATABASE_URL` is set directly in Render's dashboard env vars, pointing at Supabase. Don't trust `render.yaml`'s `databases:` block as the source of truth.
 - **Auth**: JWT (localStorage key: `cksns_token`), Google OAuth (live), Microsoft MSAL (Azure AD) with JWKS signature verification
 - **Logging**: `pino` + `pino-http` (JSON structured logs on Render stdout)
-- **Deploy**: Render.com via `render.yaml` (web service), custom domain `cksns.live` (name.com → Render, Cloudflare in front)
+- **Security**: `helmet` for CSP + security headers (see `server/index.js` for the exact allowlist); `server/sanitize.js` strips all HTML from post/comment content server-side before storage (isomorphic-dompurify) — this app has no rich-text support, so the policy is "strip everything," not "allow a safe subset"
+- **Deploy**: Render.com via `render.yaml` (web service), custom domain `cksns.live` (name.com → Render, Cloudflare in front). **Free tier** — spins down after ~15 min idle, cold-starts on next request. The Postgres pool has a `connectionTimeoutMillis` so a slow/unreachable DB fails fast (10s) instead of hanging the whole server indefinitely, but the spin-down itself only goes away on a paid plan.
 
 ## Project Structure
 
@@ -58,8 +59,8 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 
 ## Core Features (Implemented)
 
-- **Spaces**: Class (per grade), Subject (per grade), Club (all grades)
-- **Sections per space**: Announcements & Assignments / Questions / Anonymous & Vent
+- **Spaces**: Class (per grade), Subject (per grade), Club (all grades). Admins can create new boards ("+ Create board" in Admin > Space Assignment), with an optional fully custom list of categories per board (stored as JSON in `spaces.sections`; NULL = the 3 app defaults). `POST /api/posts`'s section validation checks against the specific space's actual sections, not a hardcoded list.
+- **Sections per space**: Announcements & Assignments / Questions / Anonymous & Vent by default, or custom per board (see above)
 - **Access control**:
   - Students: grade-matched class/subject spaces + all clubs
   - Teachers: only spaces assigned via `user_spaces` (admin assigns in Admin > Space Assignment tab)
@@ -68,10 +69,10 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 - **Verification**: manual (admin approves), student_id (photo upload), school_sso (placeholder)
 - **Roles**: student / teacher / admin
 - **Comments + Notifications**: comment on a post notifies the post author (polled every 15s)
-- **Admin panel** (3 tabs):
-  - Users: list/approve/reject users by verification status
+- **Admin panel** (3 tabs, both Users and Posts have a client-side search box):
+  - Users: list/approve/reject users by verification status; edit role + grade inline (`PATCH /api/admin/users/:id`) — **note**: role/grade are baked into the user's JWT at login, so an edited user won't see the change take effect until they re-authenticate, even though the DB updates immediately
   - Posts: view all posts with real author name + IP (including anonymous), delete posts
-  - Space Assignment: assign/remove teachers to specific spaces
+  - Space Assignment: assign/remove teachers to specific spaces; "+ Create board" to add new boards with custom categories
 - **IP tracking**: every post and comment stores `author_ip` (X-Forwarded-For via Render proxy)
 - **Anonymous reveal**: admin-only — real `author_name` + `author_ip` shown for anonymous posts/comments
 - **Rate limiting**: 100 req / 15 min on `/api/*`
@@ -80,12 +81,15 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 ## Design
 
 - Everytime (Korean university SNS) inspired style
-- Red primary: `#e53935`
+- Red primary: `#e53935` (default — see accent color picker below)
 - Top sticky navbar (red background), left sidebar board list, dense post card list
-- Post card row: section badge + title + [comment count] / excerpt / author · date
+- Post card row: section badge (color-coded per section) + title + [comment count] / excerpt / author · date; anonymous posts get distinct muted styling
 - Admin reveal badge: purple `🔍 realname · IP: x.x.x.x`
 - Font: Noto Sans KR via Google Fonts CDN
 - Mobile: sidebar stacks above content
+- **Dark mode**: follows system `prefers-color-scheme` by default; manual toggle in the navbar (🌙/☀️) and in Settings, persisted to `localStorage`. All CSS colors are custom properties (`src/styles.css` `:root`) — any new UI must use tokens, not literal hex, or it won't adapt to dark mode. Native form controls (`<button>`/`<input>`/`<select>`/`<textarea>`) don't inherit `color` from ancestors — always set it explicitly or text becomes invisible in dark mode.
+- **Accent color picker**: Settings > Appearance lets users pick from 6 presets (red/blue/green/purple/orange/teal, each with light+dark variants), applied via inline `--color-primary`/`-hover`/`-light` overrides on `<html>`, persisted to `localStorage` (`cksns_accent`)
+- **Settings tab** (was "Profile"): Account info + Appearance (theme toggle, accent picker)
 
 ## Coding Conventions
 
@@ -174,6 +178,16 @@ UPLOAD_DIR=./data/uploads
 - **Hardening**: CORS restricted to known origins (was reflecting any origin with `credentials: true`); `verification_method` validation made consistent across `/signup`, `/google`, `/microsoft`.
 - **Dependencies**: `npm audit fix` resolved the vulnerabilities in packages that process request data (express, body-parser, qs, path-to-regexp, ip-address). Remaining flagged vulns are in build-time-only tooling (`@mapbox/node-pre-gyp`'s tar/glob chain, used only to fetch bcrypt's prebuilt binary) or unreachable code paths (`uuid` via `gaxios`) — left alone, would require major-version bumps of `bcrypt`/`google-auth-library` for very low real-world benefit here.
 
+### ✅ Phase 7 — Design Overhaul, Production Incident, Security Hardening [Done, 2026-07-29/30]
+- **Design system**: expanded CSS tokens (semantic success/warning/error/admin/info/anon colors, motion durations/easing), dark mode via `prefers-color-scheme` + manual toggle (navbar + Settings), 6-preset accent color picker (Settings > Appearance)
+- **Auth redesign**: two-panel login/signup layout, grouped OAuth with divider, consolidated the duplicate Google/Microsoft "complete profile" forms into one helper, inline validation errors replacing blocking `alert()`s
+- **Feed polish**: sidebar active-space accent bar, color-coded section badges, distinct anonymous-post styling, sliding navbar tab underline, button press feedback, focus rings
+- **Settings tab** (renamed from Profile): Account info + Appearance section
+- **Admin**: search bars on Users/Posts tabs, inline role/grade editing per user, "+ Create board" with custom per-board categories (new `spaces.sections` DB column)
+- **Production incident**: the live site went fully unresponsive (TLS completed, then hung indefinitely on every route) after the Render free-tier service hibernated and failed to cleanly reconnect to Supabase on wake. Root cause: the `pg` Pool had no `connectionTimeoutMillis`, so an unreachable DB hung the server forever instead of failing. Fixed with a 10s timeout — turns a silent indefinite hang into a fast, loggable crash + Render restart. The free-tier spin-down cycle itself is unchanged (would need a paid Render plan to eliminate); user opted to leave it as-is for now rather than pay or add a keep-alive workaround.
+- **Security hardening**: server-side content sanitization (`server/sanitize.js`, strips all HTML from post/comment content via DOMPurify before storage) and CSP headers via `helmet` (see Tech Stack). Caught and fixed a real gap post-deploy: Google's Sign-In script loads its own stylesheet from `accounts.google.com`, which the initial CSP didn't allowlist.
+- **Bug fixes found along the way**: notification timestamps were using Korean locale formatting (`toLocaleString("ko-KR", ...)`) instead of the app's standard `fmtDate()` — violated the English-only rule; `auth.js` used raw `console.error` in all 6 catch blocks instead of the project's `req.log.error` convention, so auth failures weren't in Render's structured logs; default active section after login/board-switch was hardcoded to `"Announcements & Assignments"` in 7 places, which breaks for boards with fully custom categories — replaced with `defaultSectionForSpace()`.
+
 ---
 
 ## Starting a New Session
@@ -185,12 +199,9 @@ Ask GPT for direction before implementing, and consult on key design decisions.
 
 ## Remaining Work (Not Yet Implemented)
 
-- Verify Microsoft login end-to-end on production (never actually tested, unlike Google)
+- Verify Microsoft login end-to-end on production (code reviewed and looks correct, but this Azure app registration is org-restricted — needs an actual Cranbrook Microsoft 365 account to complete a real test; never actually confirmed working, unlike Google)
 - No admin-facing endpoint to view uploaded student ID photos yet (files are stored, just not retrievable through the app)
-- XSS prevention: DOMPurify to sanitize post/comment content
-- CSP headers: `helmet.js`
 - JWT → HttpOnly Cookie migration (currently localStorage)
-- Dark mode
-- CSS micro-interactions (transitions on hover, tab changes)
 - Log retention policy (Render log rotation)
-- README.md is stale (still describes SQLite, no mention of Supabase/cksns.live/Google OAuth)
+- Render free-tier spin-down causes cold-start delays / occasional slow first-loads after idle periods — the indefinite-hang failure mode is fixed (see Phase 7), but the underlying spin-down cycle needs a paid Render plan to fully remove. Left as-is for now per user's choice.
+- Google Sign-In button renders in Korean (`Google 계정으로 로그인`) — that's Google's own GIS widget localizing based on browser locale, not our codebase, but could be pinned to English via `?hl=en` on the GIS script tag if it's ever worth fixing
