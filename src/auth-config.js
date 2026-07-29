@@ -11,5 +11,5 @@
  */
 window.AUTH_CONFIG = {
   adminEmail: "mkim28@cranbrook.edu",
-  googleClientId: "" // ← Paste your Google OAuth Client ID here (step 5 above)
+  googleClientId: "634106727168-rsfglc38fmmigqvrkb79m910s57oe71f.apps.googleusercontent.com"
 };
