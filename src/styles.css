@@ -514,6 +514,8 @@ body {
   font-size: 0.85rem;
   resize: none;
   font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
   transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
 }
 .comment-form textarea:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-light); }
@@ -590,6 +592,7 @@ body {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   font-family: inherit;
+  color: var(--color-text);
   background: var(--color-surface);
   transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
 }
@@ -890,6 +893,67 @@ body {
 .profile-dl dt { color: var(--color-text-muted); }
 .profile-dl dd { margin: 0; }
 
+/* ── Settings ───────────────────────────────────────────────────────────── */
+.settings-section { margin-bottom: 1.5rem; }
+.settings-section:last-of-type { margin-bottom: 0; }
+.settings-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--color-border);
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 260px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--color-border-strong);
+  border-radius: 999px;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.switch input:checked + .switch-track { background: var(--color-primary); }
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(18px); }
+
 /* ── Admin ──────────────────────────────────────────────────────────────── */
 .admin-section-title {
   font-size: 0.85rem;
@@ -977,6 +1041,7 @@ body {
   display: inline-block;
   padding: 0.3rem 0.65rem;
   font-size: 0.8rem;
+  color: var(--color-text);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: 2px;

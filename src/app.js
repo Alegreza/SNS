@@ -331,6 +331,11 @@
     try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch (e) {}
   }
 
+  function clearThemeOverride() {
+    document.documentElement.removeAttribute("data-theme");
+    try { localStorage.removeItem(THEME_STORAGE_KEY); } catch (e) {}
+  }
+
   function handleThemeToggleClick() {
     setTheme(isDarkActive() ? "light" : "dark");
     render();
@@ -923,7 +928,7 @@
         { id: "spaces", label: "Boards" },
         { id: "questions", label: "Q&A / Vent" },
         { id: "notifications", label: "Notifications" },
-        { id: "profile", label: "Profile" }
+        { id: "settings", label: "Settings" }
       ];
       if (userState.role === "admin") tabs.push({ id: "admin", label: "Admin" });
       tabs.forEach(function (tab) {
@@ -1424,51 +1429,103 @@
     container.appendChild(wrap);
   }
 
-  function renderProfile(container) {
+  function renderSettings(container) {
     var wrap = el("div", "app-wrapper");
     var card = el("section", "card");
     var t = el("h2");
-    t.textContent = "Profile";
+    t.textContent = "Settings";
     card.appendChild(t);
+
     if (!userState.isAuthenticated) {
       var p = el("p", "muted");
-      p.textContent = "Sign in to view your profile.";
+      p.textContent = "Sign in to view your settings.";
       card.appendChild(p);
-    } else {
-      var info = el("dl", "profile-dl");
-      var roleLabel = userState.role === "admin" ? "Admin" : (userState.role === "teacher" ? "Teacher" : "Student");
-      var rows = [["Name", userState.name], ["Email", userState.email], ["Role", roleLabel], ["Grade", userState.grade || "—"]];
-      if (userState.username) rows.splice(3, 0, ["Username", userState.username]);
-      rows.forEach(function (kv) {
-        var dt = document.createElement("dt");
-        dt.textContent = kv[0];
-        var dd = document.createElement("dd");
-        dd.textContent = kv[1] || "—";
-        info.appendChild(dt);
-        info.appendChild(dd);
-      });
-      card.appendChild(info);
-
-      // Verification status badge
-      if (userState.role !== "admin") {
-        var statusMap = {
-          pending:  { label: "Pending verification", cls: "badge-pending" },
-          approved: { label: "Verified",             cls: "badge-approved" },
-          rejected: { label: "Rejected",             cls: "badge-rejected" }
-        };
-        var vs = userState.verification_status || "pending";
-        var sm = statusMap[vs] || statusMap["pending"];
-        var badge = el("span", "verification-badge " + sm.cls);
-        badge.textContent = sm.label;
-        card.appendChild(badge);
-      }
-
-      var lb = el("button", "ghost-button");
-      lb.textContent = "Sign out";
-      lb.style.marginTop = "1rem";
-      lb.addEventListener("click", handleLogoutClick);
-      card.appendChild(lb);
+      wrap.appendChild(card);
+      container.appendChild(wrap);
+      return;
     }
+
+    // --- Account ---
+    var accountSection = el("div", "settings-section");
+    var accountTitle = el("div", "settings-section-title");
+    accountTitle.textContent = "Account";
+    accountSection.appendChild(accountTitle);
+
+    var info = el("dl", "profile-dl");
+    var roleLabel = userState.role === "admin" ? "Admin" : (userState.role === "teacher" ? "Teacher" : "Student");
+    var rows = [["Name", userState.name], ["Email", userState.email], ["Role", roleLabel], ["Grade", userState.grade || "—"]];
+    if (userState.username) rows.splice(3, 0, ["Username", userState.username]);
+    rows.forEach(function (kv) {
+      var dt = document.createElement("dt");
+      dt.textContent = kv[0];
+      var dd = document.createElement("dd");
+      dd.textContent = kv[1] || "—";
+      info.appendChild(dt);
+      info.appendChild(dd);
+    });
+    accountSection.appendChild(info);
+
+    if (userState.role !== "admin") {
+      var statusMap = {
+        pending:  { label: "Pending verification", cls: "badge-pending" },
+        approved: { label: "Verified",             cls: "badge-approved" },
+        rejected: { label: "Rejected",             cls: "badge-rejected" }
+      };
+      var vs = userState.verification_status || "pending";
+      var sm = statusMap[vs] || statusMap["pending"];
+      var badge = el("span", "verification-badge " + sm.cls);
+      badge.textContent = sm.label;
+      accountSection.appendChild(badge);
+    }
+    card.appendChild(accountSection);
+
+    // --- Appearance ---
+    var appearanceSection = el("div", "settings-section");
+    var appearanceTitle = el("div", "settings-section-title");
+    appearanceTitle.textContent = "Appearance";
+    appearanceSection.appendChild(appearanceTitle);
+
+    var dark = isDarkActive();
+    var switchRow = el("label", "switch-row");
+    var switchLabelText = el("span");
+    switchLabelText.textContent = "Dark mode";
+    var switchWrap = el("span", "switch");
+    var switchInput = document.createElement("input");
+    switchInput.type = "checkbox";
+    switchInput.checked = dark;
+    switchInput.addEventListener("change", function () {
+      setTheme(switchInput.checked ? "dark" : "light");
+      render();
+    });
+    var switchTrack = el("span", "switch-track");
+    var switchThumb = el("span", "switch-thumb");
+    switchTrack.appendChild(switchThumb);
+    switchWrap.appendChild(switchInput);
+    switchWrap.appendChild(switchTrack);
+    switchRow.appendChild(switchLabelText);
+    switchRow.appendChild(switchWrap);
+    appearanceSection.appendChild(switchRow);
+
+    if (getStoredTheme()) {
+      var resetBtn = el("button", "ghost-button tiny");
+      resetBtn.type = "button";
+      resetBtn.textContent = "Match device setting";
+      resetBtn.style.marginTop = "0.5rem";
+      resetBtn.addEventListener("click", function () {
+        clearThemeOverride();
+        render();
+      });
+      appearanceSection.appendChild(resetBtn);
+    }
+    card.appendChild(appearanceSection);
+
+    // --- Sign out ---
+    var lb = el("button", "ghost-button");
+    lb.textContent = "Sign out";
+    lb.style.marginTop = "0.5rem";
+    lb.addEventListener("click", handleLogoutClick);
+    card.appendChild(lb);
+
     wrap.appendChild(card);
     container.appendChild(wrap);
   }
@@ -1600,7 +1657,7 @@
 
           // Teacher assign select
           var sel = document.createElement("select");
-          sel.style.cssText = "font-size:0.85rem;padding:0.25rem;margin-right:0.4rem;border:1px solid var(--color-border);border-radius:3px;";
+          sel.style.cssText = "font-size:0.85rem;padding:0.25rem;margin-right:0.4rem;border:1px solid var(--color-border);border-radius:3px;color:var(--color-text);background:var(--color-surface);";
           var opt0 = document.createElement("option"); opt0.value = ""; opt0.textContent = "Select a teacher…"; sel.appendChild(opt0);
           allUsers.forEach(function (u) {
             var opt = document.createElement("option"); opt.value = u.id; opt.textContent = u.name + " (" + u.email + ")"; sel.appendChild(opt);
@@ -1698,7 +1755,7 @@
         case "spaces":        renderSpaces(content); break;
         case "questions":     renderQuestions(content); break;
         case "notifications": renderNotifications(content); break;
-        case "profile":       renderProfile(content); break;
+        case "settings":      renderSettings(content); break;
         case "admin":         renderAdmin(content); break;
         default:              renderHome(content);
       }
