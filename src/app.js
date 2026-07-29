@@ -309,14 +309,72 @@
     }
   }
 
+  var THEME_STORAGE_KEY = "cksns_theme";
+
+  function getStoredTheme() {
+    try { return localStorage.getItem(THEME_STORAGE_KEY); } catch (e) { return null; }
+  }
+
+  function systemPrefersDark() {
+    return typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  function isDarkActive() {
+    var stored = getStoredTheme();
+    if (stored === "dark") return true;
+    if (stored === "light") return false;
+    return systemPrefersDark();
+  }
+
+  function setTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch (e) {}
+  }
+
+  function handleThemeToggleClick() {
+    setTheme(isDarkActive() ? "light" : "dark");
+    render();
+  }
+
+  function showFormError(form, message) {
+    var banner = form.querySelector(".form-error-banner");
+    if (!banner) {
+      banner = el("div", "form-error-banner");
+      form.insertBefore(banner, form.firstChild);
+    }
+    banner.textContent = message;
+  }
+
+  function clearFormError(form) {
+    var banner = form.querySelector(".form-error-banner");
+    if (banner) banner.parentNode.removeChild(banner);
+  }
+
+  function markFieldError(field) {
+    if (!field) return;
+    var wrap = field.closest && field.closest(".form-field");
+    if (wrap) wrap.classList.add("has-error");
+  }
+
+  function attachFieldErrorClearing(form) {
+    form.addEventListener("input", function (e) {
+      var wrap = e.target.closest && e.target.closest(".form-field");
+      if (wrap) wrap.classList.remove("has-error");
+      clearFormError(form);
+    });
+  }
+
   function handleLoginSubmit(ev) {
     ev.preventDefault();
     var f = ev.target;
+    clearFormError(f);
     var login = (f.login && f.login.value || f.email && f.email.value || "").trim();
     var password = f.password && f.password.value;
 
     if (!login || !password) {
-      alert("Email or username and password required.");
+      if (!login) markFieldError(f.login);
+      if (!password) markFieldError(f.password);
+      showFormError(f, "Email or username and password required.");
       return;
     }
 
@@ -334,13 +392,14 @@
         render();
       })
       .catch(function (e) {
-        alert(e.message || "Login failed");
+        showFormError(f, e.message || "Login failed");
       });
   }
 
   function handleSignupSubmit(ev) {
     ev.preventDefault();
     var f = ev.target;
+    clearFormError(f);
     var email = (f.email && f.email.value || "").trim();
     var password = f.password && f.password.value;
     var name = (f.name && f.name.value || "").trim();
@@ -352,12 +411,18 @@
     var student_id = f.student_id && f.student_id.files && f.student_id.files[0];
 
     if (!email || !password || !name || !role || !grade || !verification_method) {
-      alert("Please fill in all required fields.");
+      if (!email) markFieldError(f.email);
+      if (!password) markFieldError(f.password);
+      if (!name) markFieldError(f.name);
+      if (!role) markFieldError(f.role);
+      if (!grade) markFieldError(f.grade);
+      showFormError(f, "Please fill in all required fields.");
       return;
     }
 
     if (verification_method === "student_id" && !student_id) {
-      alert("Please upload your student ID photo.");
+      markFieldError(f.student_id);
+      showFormError(f, "Please upload your student ID photo.");
       return;
     }
 
@@ -394,7 +459,7 @@
         render();
       })
       .catch(function (e) {
-        alert(e.message || "Signup failed");
+        showFormError(f, e.message || "Signup failed");
       });
   }
 
@@ -478,6 +543,7 @@
     var f = ev.target;
     var pending = appViewState.pendingMsAccount;
     if (!pending || !pending.token) { alert("Session expired. Please try again."); render(); return; }
+    clearFormError(f);
 
     var role = f.role && f.role.value;
     var grade = f.grade && f.grade.value;
@@ -487,11 +553,14 @@
     var student_id = f.student_id && f.student_id.files && f.student_id.files[0];
 
     if (!role || !grade || !verification_method) {
-      alert("Please fill in role, grade, and verification method.");
+      if (!role) markFieldError(f.role);
+      if (!grade) markFieldError(f.grade);
+      showFormError(f, "Please fill in role, grade, and verification method.");
       return;
     }
     if (verification_method === "student_id" && !student_id) {
-      alert("Please upload your student ID photo.");
+      markFieldError(f.student_id);
+      showFormError(f, "Please upload your student ID photo.");
       return;
     }
 
@@ -528,7 +597,7 @@
         render();
       })
       .catch(function (e) {
-        alert(e.message || "Signup failed");
+        showFormError(f, e.message || "Signup failed");
       });
   }
 
@@ -576,6 +645,7 @@
     var f = ev.target;
     var pending = appViewState.pendingGoogleAccount;
     if (!pending || !pending.token) { alert("Session expired. Please try again."); render(); return; }
+    clearFormError(f);
 
     var role = f.role && f.role.value;
     var grade = f.grade && f.grade.value;
@@ -585,11 +655,14 @@
     var student_id = f.student_id && f.student_id.files && f.student_id.files[0];
 
     if (!role || !grade || !verification_method) {
-      alert("Please fill in role, grade, and verification method.");
+      if (!role) markFieldError(f.role);
+      if (!grade) markFieldError(f.grade);
+      showFormError(f, "Please fill in role, grade, and verification method.");
       return;
     }
     if (verification_method === "student_id" && !student_id) {
-      alert("Please upload your student ID photo.");
+      markFieldError(f.student_id);
+      showFormError(f, "Please upload your student ID photo.");
       return;
     }
 
@@ -626,7 +699,7 @@
         render();
       })
       .catch(function (e) {
-        alert(e.message || "Signup failed");
+        showFormError(f, e.message || "Signup failed");
       });
   }
 
@@ -703,11 +776,14 @@
     var commentList = appViewState.commentsByPost[post.id] || [];
     var expanded = !!appViewState.expandedComments[post.id];
 
-    var article = el("article", "post-card");
+    var article = el("article", "post-card" + (post.isAnonymous ? " is-anonymous" : ""));
 
     // Top row: badge + title + comment count
     var row = el("div", "post-card-row");
-    var badge = el("span", "post-section-badge");
+    var badgeClass = "post-section-badge";
+    if (post.section === "Questions") badgeClass += " post-section-badge--questions";
+    else if (post.section === "Anonymous / Vent") badgeClass += " post-section-badge--anonymous";
+    var badge = el("span", badgeClass);
     badge.textContent = opts.showSpace
       ? (opts.spaceLabel || "Space") + " · " + post.section.split(" ")[0]
       : post.section.split(" ")[0];
@@ -862,8 +938,19 @@
         tabsEl.appendChild(btn);
       });
       nav.appendChild(tabsEl);
+    }
 
-      var right = el("div", "navbar-right");
+    var right = el("div", "navbar-right");
+    var dark = isDarkActive();
+    var themeBtn = el("button", "theme-toggle-btn");
+    themeBtn.type = "button";
+    themeBtn.textContent = dark ? "☀️" : "🌙";
+    themeBtn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+    themeBtn.title = themeBtn.getAttribute("aria-label");
+    themeBtn.addEventListener("click", handleThemeToggleClick);
+    right.appendChild(themeBtn);
+
+    if (userState.isAuthenticated) {
       var roleLabel = userState.role === "admin" ? "Admin" : (userState.role === "teacher" ? "Teacher" : "Grade " + (userState.grade || "?"));
       var userInfo = el("span", "navbar-user");
       userInfo.textContent = userState.name + " · " + roleLabel;
@@ -873,8 +960,8 @@
       logoutBtn.addEventListener("click", handleLogoutClick);
       right.appendChild(userInfo);
       right.appendChild(logoutBtn);
-      nav.appendChild(right);
     }
+    nav.appendChild(right);
 
     container.appendChild(nav);
 
@@ -889,73 +976,74 @@
 
   function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
-  function renderLogin(container) {
-    var loginWrap = el("div", "login-wrap");
-    var pending = appViewState.pendingMsAccount;
-    var screen = appViewState.authScreen;
+  function renderCompleteProfileCard(pending, providerLabel, submitHandler, onBack) {
     var ac = window.AUTH_CONFIG || {};
     var adminEmail = ac.adminEmail || "mkim28@cranbrook.edu";
-    var msCfg = window.MSAL_CONFIG;
-    var msalReady = msCfg && msCfg.clientId && msCfg.clientId !== "YOUR_CLIENT_ID" && (typeof window.msal !== "undefined" || typeof msal !== "undefined");
-    var gCfg = window.AUTH_CONFIG || {};
-    var googleReady = !!(gCfg && gCfg.googleClientId);
-
     var card = el("section", "login-card");
+    var steps = el("span", "auth-steps");
+    steps.textContent = "Step 2 of 2";
+    var title = el("h2");
+    title.textContent = "Complete your profile";
+    var desc = el("p", "muted");
+    desc.textContent = "Signed in with " + providerLabel + ". Fill in below and choose school verification.";
+    var form = el("form", "form-grid");
+    form.noValidate = true;
+    form.innerHTML = '<div class="form-field"><label>Name</label><input type="text" value="' + esc(pending.name) + '" readonly disabled /></div>' +
+      '<div class="form-field"><label>Email</label><input type="text" value="' + esc(pending.email) + '" readonly disabled /></div>' +
+      '<div class="form-field"><label for="username">Username (optional)</label><input id="username" name="username" type="text" placeholder="Login with email or username" /></div>' +
+      '<div class="form-field"><label for="school_email">School email (optional)</label><input id="school_email" name="school_email" type="email" /></div>' +
+      '<div class="form-field"><label for="role">Role</label><select id="role" name="role" required><option value="">Select</option><option value="student">Student</option><option value="teacher">Teacher</option></select></div>' +
+      '<div class="form-field"><label for="grade">Grade</label><select id="grade" name="grade" required><option value="">Select</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></div>' +
+      '<div class="form-field"><label>School verification</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> Manual: Contact ' + esc(adminEmail) + '</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> Upload student ID</label><input type="file" name="student_id" accept="image/*" /></div>' +
+      '<div class="form-actions"><button type="submit" class="primary-button">Continue</button><button type="button" class="ghost-button" id="complete-back-btn">Use different account</button></div>';
+    form.addEventListener("submit", submitHandler);
+    attachFieldErrorClearing(form);
+    var backBtn = form.querySelector("#complete-back-btn");
+    if (backBtn) backBtn.addEventListener("click", onBack);
+    card.appendChild(steps);
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(form);
+    return card;
+  }
 
+  function renderLogin(container) {
+    var page = el("div", "auth-page");
+    var brand = el("div", "auth-brand");
+    brand.innerHTML =
+      '<div class="auth-brand-logo">CKSNS</div>' +
+      '<p class="auth-brand-tagline">A quiet space for Cranbrook students only — class boards, subject boards, clubs, and a place to vent anonymously.</p>' +
+      '<div class="auth-brand-features">' +
+        '<div class="auth-brand-feature"><span class="auth-brand-feature-dot"></span>Class &amp; subject spaces by grade</div>' +
+        '<div class="auth-brand-feature"><span class="auth-brand-feature-dot"></span>Announcements, questions, anonymous vent</div>' +
+        '<div class="auth-brand-feature"><span class="auth-brand-feature-dot"></span>Verified students and teachers only</div>' +
+      '</div>';
+    page.appendChild(brand);
+
+    var formPanel = el("div", "auth-form-panel");
+    page.appendChild(formPanel);
+    container.appendChild(page);
+
+    var pending = appViewState.pendingMsAccount;
     if (pending && pending.token) {
-      var title = el("h2");
-      title.textContent = "Complete your profile";
-      var desc = el("p", "muted");
-      desc.textContent = "Signed in with Microsoft. Fill in below and choose school verification.";
-      var form = el("form", "form-grid");
-      form.innerHTML = '<div class="form-field"><label>Name</label><input type="text" value="' + esc(pending.name) + '" readonly disabled /></div>' +
-        '<div class="form-field"><label>Email</label><input type="text" value="' + esc(pending.email) + '" readonly disabled /></div>' +
-        '<div class="form-field"><label for="username">Username (optional)</label><input id="username" name="username" type="text" placeholder="Login with email or username" /></div>' +
-        '<div class="form-field"><label for="school_email">School email (optional)</label><input id="school_email" name="school_email" type="email" /></div>' +
-        '<div class="form-field"><label for="role">Role</label><select id="role" name="role" required><option value="">Select</option><option value="student">Student</option><option value="teacher">Teacher</option></select></div>' +
-        '<div class="form-field"><label for="grade">Grade</label><select id="grade" name="grade" required><option value="">Select</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></div>' +
-        '<div class="form-field"><label>School verification</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> Manual: Contact ' + esc(adminEmail) + '</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> Upload student ID</label><input type="file" name="student_id" accept="image/*" /></div>' +
-        '<div class="form-actions"><button type="submit" class="primary-button">Continue</button><button type="button" class="ghost-button" id="ms-back-btn">Use different account</button></div>';
-      form.addEventListener("submit", handleCompleteProfileSubmit);
-      card.appendChild(title);
-      card.appendChild(desc);
-      card.appendChild(form);
-      loginWrap.appendChild(card);
-      container.appendChild(loginWrap);
-      setTimeout(function () {
-        var backBtn = document.getElementById("ms-back-btn");
-        if (backBtn) backBtn.addEventListener("click", function () { appViewState.pendingMsAccount = null; render(); });
-      }, 0);
+      formPanel.appendChild(renderCompleteProfileCard(pending, "Microsoft", handleCompleteProfileSubmit, function () { appViewState.pendingMsAccount = null; render(); }));
       return;
     }
 
     var pendingG = appViewState.pendingGoogleAccount;
     if (pendingG && pendingG.token) {
-      var titleG = el("h2");
-      titleG.textContent = "Complete your profile";
-      var descG = el("p", "muted");
-      descG.textContent = "Signed in with Google. Fill in below and choose school verification.";
-      var formG = el("form", "form-grid");
-      formG.innerHTML = '<div class="form-field"><label>Name</label><input type="text" value="' + esc(pendingG.name) + '" readonly disabled /></div>' +
-        '<div class="form-field"><label>Email</label><input type="text" value="' + esc(pendingG.email) + '" readonly disabled /></div>' +
-        '<div class="form-field"><label for="username">Username (optional)</label><input id="username" name="username" type="text" placeholder="Login with email or username" /></div>' +
-        '<div class="form-field"><label for="school_email">School email (optional)</label><input id="school_email" name="school_email" type="email" /></div>' +
-        '<div class="form-field"><label for="role">Role</label><select id="role" name="role" required><option value="">Select</option><option value="student">Student</option><option value="teacher">Teacher</option></select></div>' +
-        '<div class="form-field"><label for="grade">Grade</label><select id="grade" name="grade" required><option value="">Select</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></div>' +
-        '<div class="form-field"><label>School verification</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> Manual: Contact ' + esc(adminEmail) + '</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> Upload student ID</label><input type="file" name="student_id" accept="image/*" /></div>' +
-        '<div class="form-actions"><button type="submit" class="primary-button">Continue</button><button type="button" class="ghost-button" id="google-back-btn">Use different account</button></div>';
-      formG.addEventListener("submit", handleCompleteGoogleProfileSubmit);
-      card.appendChild(titleG);
-      card.appendChild(descG);
-      card.appendChild(formG);
-      loginWrap.appendChild(card);
-      container.appendChild(loginWrap);
-      setTimeout(function () {
-        var backBtnG = document.getElementById("google-back-btn");
-        if (backBtnG) backBtnG.addEventListener("click", function () { appViewState.pendingGoogleAccount = null; render(); });
-      }, 0);
+      formPanel.appendChild(renderCompleteProfileCard(pendingG, "Google", handleCompleteGoogleProfileSubmit, function () { appViewState.pendingGoogleAccount = null; render(); }));
       return;
     }
+
+    var screen = appViewState.authScreen;
+    var ac = window.AUTH_CONFIG || {};
+    var adminEmail = ac.adminEmail || "mkim28@cranbrook.edu";
+    var msCfg = window.MSAL_CONFIG;
+    var msalReady = msCfg && msCfg.clientId && msCfg.clientId !== "YOUR_CLIENT_ID" && (typeof window.msal !== "undefined" || typeof msal !== "undefined");
+    var googleReady = !!(ac && ac.googleClientId);
+
+    var card = el("section", "login-card");
 
     if (screen === "choose") {
       var t = el("h2");
@@ -965,19 +1053,17 @@
       d.textContent = "Cranbrook School exclusive community";
       var logBtn = el("button", "primary-button");
       logBtn.textContent = "Log in";
-      logBtn.style.marginRight = "0.5rem";
       logBtn.addEventListener("click", function () { appViewState.authScreen = "login"; render(); });
       var signBtn = el("button", "ghost-button");
       signBtn.textContent = "Sign up";
       signBtn.addEventListener("click", function () { appViewState.authScreen = "signup"; render(); });
-      card.appendChild(t);
-      card.appendChild(d);
-      var btnWrap = el("div");
+      var btnWrap = el("div", "form-actions");
       btnWrap.appendChild(logBtn);
       btnWrap.appendChild(signBtn);
+      card.appendChild(t);
+      card.appendChild(d);
       card.appendChild(btnWrap);
-      loginWrap.appendChild(card);
-      container.appendChild(loginWrap);
+      formPanel.appendChild(card);
       return;
     }
 
@@ -991,28 +1077,39 @@
       back.addEventListener("click", function (e) { e.preventDefault(); appViewState.authScreen = "choose"; render(); });
       var t2 = el("h2");
       t2.textContent = "Log in";
-      var form = el("form", "form-grid");
-      form.innerHTML = '<div class="form-field"><label>Email or username</label><input name="login" type="text" placeholder="Email or username" required /></div>' +
-        '<div class="form-field"><label>Password</label><input name="password" type="password" required /></div>' +
-        '<div class="form-actions"><button type="submit" class="primary-button">Log in</button></div>';
-      form.addEventListener("submit", handleLoginSubmit);
       card.appendChild(back);
       card.appendChild(t2);
-      card.appendChild(form);
+
+      var oauthGroup = el("div", "auth-oauth-group");
       if (msalReady) {
         var msBtn = el("button", "primary-button ms-signin-btn");
         msBtn.type = "button";
         msBtn.innerHTML = '<span class="ms-icon"></span> Sign in with Microsoft';
         msBtn.addEventListener("click", handleMicrosoftLogin);
-        card.appendChild(msBtn);
+        oauthGroup.appendChild(msBtn);
       }
       if (googleReady) {
         var gWrap = el("div", "google-signin-wrap");
         gWrap.id = "google-signin-btn-login";
-        card.appendChild(gWrap);
+        oauthGroup.appendChild(gWrap);
       }
-      loginWrap.appendChild(card);
-      container.appendChild(loginWrap);
+      if (oauthGroup.children.length) {
+        card.appendChild(oauthGroup);
+        var divider = el("div", "auth-divider");
+        divider.textContent = "or continue with email";
+        card.appendChild(divider);
+      }
+
+      var form = el("form", "form-grid");
+      form.noValidate = true;
+      form.innerHTML = '<div class="form-field"><label>Email or username</label><input name="login" type="text" placeholder="Email or username" required /></div>' +
+        '<div class="form-field"><label>Password</label><input name="password" type="password" required /></div>' +
+        '<div class="form-actions"><button type="submit" class="primary-button">Log in</button></div>';
+      form.addEventListener("submit", handleLoginSubmit);
+      attachFieldErrorClearing(form);
+      card.appendChild(form);
+
+      formPanel.appendChild(card);
       if (googleReady) setTimeout(function () { initGoogleButton("google-signin-btn-login"); }, 0);
       return;
     }
@@ -1029,24 +1126,29 @@
       t3.textContent = "Sign up";
       card.appendChild(back2);
       card.appendChild(t3);
+
+      var oauthGroupS = el("div", "auth-oauth-group");
       if (msalReady) {
         var msSignup = el("button", "primary-button ms-signin-btn");
         msSignup.type = "button";
         msSignup.textContent = "Sign up with Microsoft";
         msSignup.addEventListener("click", handleMicrosoftLogin);
-        card.appendChild(msSignup);
+        oauthGroupS.appendChild(msSignup);
       }
       if (googleReady) {
         var gWrapSignup = el("div", "google-signin-wrap");
         gWrapSignup.id = "google-signin-btn-signup";
-        card.appendChild(gWrapSignup);
+        oauthGroupS.appendChild(gWrapSignup);
       }
-      if (msalReady || googleReady) {
-        var orP = el("p", "muted");
-        orP.textContent = "Or with email:";
-        card.appendChild(orP);
+      if (oauthGroupS.children.length) {
+        card.appendChild(oauthGroupS);
+        var dividerS = el("div", "auth-divider");
+        dividerS.textContent = "or continue with email";
+        card.appendChild(dividerS);
       }
+
       var signupForm = el("form", "form-grid");
+      signupForm.noValidate = true;
       signupForm.innerHTML = '<div class="form-field"><label>Email</label><input name="email" type="email" required /></div>' +
         '<div class="form-field"><label>Username (optional)</label><input name="username" type="text" placeholder="Login with email or username" /></div>' +
         '<div class="form-field"><label>Password</label><input name="password" type="password" required /></div>' +
@@ -1057,9 +1159,10 @@
         '<div class="form-field"><label>School verification</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> Manual: ' + esc(adminEmail) + '</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> Upload student ID photo</label><input type="file" name="student_id" accept="image/*" /></div>' +
         '<div class="form-actions"><button type="submit" class="primary-button">Sign up</button></div>';
       signupForm.addEventListener("submit", handleSignupSubmit);
+      attachFieldErrorClearing(signupForm);
       card.appendChild(signupForm);
-      loginWrap.appendChild(card);
-      container.appendChild(loginWrap);
+
+      formPanel.appendChild(card);
       if (googleReady) setTimeout(function () { initGoogleButton("google-signin-btn-signup"); }, 0);
     }
   }
@@ -1281,22 +1384,41 @@
     if (notifs.length === 0) {
       var p = el("p", "muted"); p.textContent = "No notifications yet."; card.appendChild(p);
     } else {
-      var ul = el("ul", "notification-list");
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      var todayStart = today.getTime();
+      var groups = [
+        { label: "Today", items: [] },
+        { label: "Earlier", items: [] }
+      ];
       notifs.forEach(function (n) {
-        var li = el("li", "notif-item" + (n.is_read ? "" : " notif-unread"));
-        var msg = el("span", "notif-message"); msg.textContent = n.message;
-        var ts = el("span", "notif-time");
-        ts.textContent = new Date(n.created_at).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-        li.appendChild(msg); li.appendChild(ts);
-        if (!n.is_read) {
-          var readBtn = el("button", "ghost-button tiny");
-          readBtn.textContent = "Mark read";
-          readBtn.addEventListener("click", function () { markNotificationRead(n.id).then(render); });
-          li.appendChild(readBtn);
-        }
-        ul.appendChild(li);
+        var isToday = new Date(n.created_at).getTime() >= todayStart;
+        groups[isToday ? 0 : 1].items.push(n);
       });
-      card.appendChild(ul);
+
+      groups.forEach(function (group) {
+        if (!group.items.length) return;
+        var groupLabel = el("div", "notif-group-label");
+        groupLabel.textContent = group.label;
+        card.appendChild(groupLabel);
+
+        var ul = el("ul", "notification-list");
+        group.items.forEach(function (n) {
+          var li = el("li", "notif-item" + (n.is_read ? "" : " notif-unread"));
+          var msg = el("span", "notif-message"); msg.textContent = n.message;
+          var ts = el("span", "notif-time");
+          ts.textContent = fmtDate(n.created_at);
+          li.appendChild(msg); li.appendChild(ts);
+          if (!n.is_read) {
+            var readBtn = el("button", "ghost-button tiny");
+            readBtn.textContent = "Mark read";
+            readBtn.addEventListener("click", function () { markNotificationRead(n.id).then(render); });
+            li.appendChild(readBtn);
+          }
+          ul.appendChild(li);
+        });
+        card.appendChild(ul);
+      });
     }
     wrap.appendChild(card);
     container.appendChild(wrap);
