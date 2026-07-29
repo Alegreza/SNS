@@ -119,6 +119,22 @@
 
 *,*::before,*::after { box-sizing: border-box; }
 
+/* Consistent, on-brand keyboard focus ring for buttons/links — respects the
+ * current accent color. Inputs/selects/textareas have their own custom focus
+ * treatment (border + box-shadow ring) defined elsewhere, so they're excluded
+ * here to avoid a doubled-up ring. :focus-visible keeps this keyboard-only. */
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* On the navbar itself (background = accent color), an accent-colored ring
+ * would blend into the background and be invisible — use white instead. */
+.top-navbar button:focus-visible,
+.top-navbar a:focus-visible {
+  outline-color: #fff;
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
