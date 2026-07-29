@@ -122,6 +122,9 @@ async function initDb() {
   // Idempotent migrations for existing deployments
   await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_ip VARCHAR(45)`);
   await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_ip VARCHAR(45)`);
+  // sections: JSON-stringified array of custom category names for this board.
+  // NULL means "use the app's default sections" (Announcements & Assignments / Questions / Anonymous & Vent).
+  await pool.query(`ALTER TABLE spaces ADD COLUMN IF NOT EXISTS sections TEXT`);
 
   // Seed default spaces
   const defaultSpaces = [

@@ -78,7 +78,8 @@
   function loadSpaces() {
     return apiCall("/spaces").then(function (data) {
       spaces = data.map(function (s) {
-        return Object.assign({ sections: ALL_SECTIONS }, s);
+        var sections = (s.sections && s.sections.length) ? s.sections : ALL_SECTIONS;
+        return Object.assign({}, s, { sections: sections });
       });
     }).catch(function () {});
   }
@@ -172,6 +173,10 @@
     return spaces;
   }
 
+  function defaultSectionForSpace(space) {
+    return (space && space.sections && space.sections.length) ? space.sections[0] : "Announcements & Assignments";
+  }
+
   function getPostsForSpace() {
     return posts;
   }
@@ -208,6 +213,9 @@
     adminFilter: "all",
     adminTab: "users",
     adminUsers: [],
+    adminUserSearch: "",
+    adminPostSearch: "",
+    showCreateBoardForm: false,
     expandedComments: {},   // postId -> true/false
     commentsByPost: {}      // postId -> comment[]
   };
@@ -292,8 +300,9 @@
   }
 
   function setActiveSpace(spaceId) {
+    var space = spaces.filter(function (s) { return s.id === spaceId; })[0];
     appViewState.activeSpaceId = spaceId;
-    appViewState.activeSection = "Announcements & Assignments";
+    appViewState.activeSection = defaultSectionForSpace(space);
     appViewState.activeTab = "spaces";
     posts = [];
     render();
@@ -329,16 +338,46 @@
   function setTheme(theme) {
     document.documentElement.setAttribute("data-theme", theme);
     try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch (e) {}
+    applyAccent(getStoredAccent());
   }
 
   function clearThemeOverride() {
     document.documentElement.removeAttribute("data-theme");
     try { localStorage.removeItem(THEME_STORAGE_KEY); } catch (e) {}
+    applyAccent(getStoredAccent());
   }
 
   function handleThemeToggleClick() {
     setTheme(isDarkActive() ? "light" : "dark");
     render();
+  }
+
+  var ACCENT_STORAGE_KEY = "cksns_accent";
+  var ACCENT_PRESETS = {
+    red:    { label: "Red",    light: { primary: "#e53935", hover: "#c62828", light: "#fdecea" },              dark: { primary: "#ef5350", hover: "#e57373", light: "rgba(239,83,80,0.16)" } },
+    blue:   { label: "Blue",   light: { primary: "#1565c0", hover: "#0d47a1", light: "#e3f2fd" },              dark: { primary: "#64b5f6", hover: "#90caf9", light: "rgba(100,181,246,0.18)" } },
+    green:  { label: "Green",  light: { primary: "#2e7d32", hover: "#1b5e20", light: "#e8f5e9" },              dark: { primary: "#66bb6a", hover: "#81c784", light: "rgba(102,187,106,0.18)" } },
+    purple: { label: "Purple", light: { primary: "#7c3aed", hover: "#6d28d9", light: "#f5f3ff" },              dark: { primary: "#b39ddb", hover: "#c9b6f0", light: "rgba(179,157,219,0.18)" } },
+    orange: { label: "Orange", light: { primary: "#ef6c00", hover: "#e65100", light: "#fff3e0" },              dark: { primary: "#ffb74d", hover: "#ffcc80", light: "rgba(255,183,77,0.18)" } },
+    teal:   { label: "Teal",   light: { primary: "#00897b", hover: "#00695c", light: "#e0f2f1" },              dark: { primary: "#4db6ac", hover: "#80cbc4", light: "rgba(77,182,172,0.18)" } }
+  };
+
+  function getStoredAccent() {
+    try { return localStorage.getItem(ACCENT_STORAGE_KEY) || "red"; } catch (e) { return "red"; }
+  }
+
+  function applyAccent(id) {
+    var preset = ACCENT_PRESETS[id] || ACCENT_PRESETS.red;
+    var vals = preset[isDarkActive() ? "dark" : "light"];
+    var root = document.documentElement.style;
+    root.setProperty("--color-primary", vals.primary);
+    root.setProperty("--color-primary-hover", vals.hover);
+    root.setProperty("--color-primary-light", vals.light);
+  }
+
+  function setAccent(id) {
+    try { localStorage.setItem(ACCENT_STORAGE_KEY, id); } catch (e) {}
+    applyAccent(id);
   }
 
   function showFormError(form, message) {
@@ -393,6 +432,7 @@
       }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
+        appViewState.activeSection = defaultSectionForSpace(ds);
         startNotifPolling();
         render();
       })
@@ -461,6 +501,7 @@
       }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
+        appViewState.activeSection = defaultSectionForSpace(ds);
         render();
       })
       .catch(function (e) {
@@ -598,6 +639,7 @@
       }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
+        appViewState.activeSection = defaultSectionForSpace(ds);
         startNotifPolling();
         render();
       })
@@ -632,6 +674,7 @@
       }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
+        appViewState.activeSection = defaultSectionForSpace(ds);
         startNotifPolling();
         render();
       })
@@ -700,6 +743,7 @@
       }).then(function () {
         var ds = getSpacesForUser()[0];
         appViewState.activeSpaceId = ds ? ds.id : null;
+        appViewState.activeSection = defaultSectionForSpace(ds);
         startNotifPolling();
         render();
       })
@@ -911,6 +955,15 @@
     var e = document.createElement(tag);
     if (cls) e.className = cls;
     return e;
+  }
+
+  function renderLoadingIndicator() {
+    var wrap = el("div", "loading-row");
+    wrap.appendChild(el("span", "spinner"));
+    var label = el("span", "muted");
+    label.textContent = "Loading…";
+    wrap.appendChild(label);
+    return wrap;
   }
 
   function renderNavbar(container) {
@@ -1517,6 +1570,29 @@
       });
       appearanceSection.appendChild(resetBtn);
     }
+
+    var accentLabel = el("p", "muted");
+    accentLabel.style.margin = "1rem 0 0.5rem";
+    accentLabel.textContent = "Accent color";
+    appearanceSection.appendChild(accentLabel);
+
+    var currentAccent = getStoredAccent();
+    var swatchRow = el("div", "accent-swatch-row");
+    Object.keys(ACCENT_PRESETS).forEach(function (id) {
+      var preset = ACCENT_PRESETS[id];
+      var swatch = el("button", "accent-swatch" + (id === currentAccent ? " active" : ""));
+      swatch.type = "button";
+      swatch.style.background = preset.light.primary;
+      swatch.setAttribute("aria-label", preset.label);
+      swatch.title = preset.label;
+      swatch.addEventListener("click", function () {
+        setAccent(id);
+        render();
+      });
+      swatchRow.appendChild(swatch);
+    });
+    appearanceSection.appendChild(swatchRow);
+
     card.appendChild(appearanceSection);
 
     // --- Sign out ---
@@ -1528,6 +1604,113 @@
 
     wrap.appendChild(card);
     container.appendChild(wrap);
+  }
+
+  function renderCreateBoardForm() {
+    var wrap = el("div", "composer");
+    var title = el("p", "composer-title");
+    title.textContent = "Create a new board";
+    wrap.appendChild(title);
+
+    var form = el("form", "form-grid");
+    form.noValidate = true;
+
+    var nameField = el("div", "form-field");
+    nameField.innerHTML = '<label for="board-name">Board name</label><input id="board-name" name="name" type="text" placeholder="e.g. Grade 10 or Chess Club" />';
+    form.appendChild(nameField);
+
+    var typeField = el("div", "form-field");
+    typeField.innerHTML = '<label for="board-type">Type</label><select id="board-type" name="type"><option value="class">Class</option><option value="subject">Subject</option><option value="club">Club</option></select>';
+    form.appendChild(typeField);
+
+    var gradeField = el("div", "form-field");
+    gradeField.innerHTML = '<label for="board-grade">Grade</label><select id="board-grade" name="grade"><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select>';
+    form.appendChild(gradeField);
+
+    var typeSelect = typeField.querySelector("select");
+    var gradeSelect = gradeField.querySelector("select");
+    function syncGradeVisibility() {
+      gradeField.style.display = typeSelect.value === "club" ? "none" : "";
+    }
+    typeSelect.addEventListener("change", syncGradeVisibility);
+    syncGradeVisibility();
+
+    var catField = el("div", "form-field");
+    var catLabel = document.createElement("label");
+    catLabel.textContent = "Categories";
+    catField.appendChild(catLabel);
+    var catList = el("div", "category-list");
+    catField.appendChild(catList);
+
+    function addCategoryRow(value) {
+      var row = el("div", "category-row");
+      var input = document.createElement("input");
+      input.type = "text";
+      input.value = value;
+      input.placeholder = "Category name";
+      var removeBtn = el("button", "ghost-button tiny");
+      removeBtn.type = "button";
+      removeBtn.textContent = "✕";
+      removeBtn.addEventListener("click", function () { catList.removeChild(row); });
+      row.appendChild(input);
+      row.appendChild(removeBtn);
+      catList.appendChild(row);
+    }
+    ["Announcements & Assignments", "Questions", "Anonymous / Vent"].forEach(function (s) { addCategoryRow(s); });
+
+    var addCatBtn = el("button", "ghost-button tiny");
+    addCatBtn.type = "button";
+    addCatBtn.textContent = "+ Add category";
+    addCatBtn.style.marginTop = "0.4rem";
+    addCatBtn.addEventListener("click", function () { addCategoryRow(""); });
+    catField.appendChild(addCatBtn);
+    form.appendChild(catField);
+
+    var actions = el("div", "form-actions");
+    var submitBtn = el("button", "primary-button");
+    submitBtn.type = "submit";
+    submitBtn.textContent = "Create board";
+    actions.appendChild(submitBtn);
+    form.appendChild(actions);
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      clearFormError(form);
+      var name = form.elements["name"].value.trim();
+      var type = typeSelect.value;
+      var grade = gradeSelect.value;
+      var sections = [];
+      catList.querySelectorAll("input").forEach(function (inp) {
+        var v = inp.value.trim();
+        if (v) sections.push(v);
+      });
+
+      if (!name) {
+        markFieldError(form.elements["name"]);
+        showFormError(form, "Board name is required.");
+        return;
+      }
+      if (!sections.length) {
+        showFormError(form, "Add at least one category.");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      apiCall("/admin/spaces", {
+        method: "POST",
+        body: { name: name, type: type, grade: type === "club" ? null : grade, sections: sections }
+      }).then(function () {
+        appViewState.showCreateBoardForm = false;
+        render();
+      }).catch(function (e) {
+        submitBtn.disabled = false;
+        showFormError(form, e.message || "Failed to create board");
+      });
+    });
+    attachFieldErrorClearing(form);
+
+    wrap.appendChild(form);
+    return wrap;
   }
 
   function renderAdmin(container) {
@@ -1558,9 +1741,34 @@
       });
       card.appendChild(filterWrap);
 
+      var userTbody = null;
+      var userEmptyMsg = null;
+      function applyUserSearchFilter() {
+        var q = (appViewState.adminUserSearch || "").trim().toLowerCase();
+        var visibleCount = 0;
+        if (userTbody) {
+          Array.prototype.forEach.call(userTbody.rows, function (row) {
+            var match = !q || (row.getAttribute("data-search") || "").indexOf(q) !== -1;
+            row.style.display = match ? "" : "none";
+            if (match) visibleCount++;
+          });
+        }
+        if (userEmptyMsg) userEmptyMsg.style.display = (q && visibleCount === 0) ? "" : "none";
+      }
+
+      var userSearchInput = document.createElement("input");
+      userSearchInput.type = "text";
+      userSearchInput.className = "admin-search-input";
+      userSearchInput.placeholder = "Search by name, email, role…";
+      userSearchInput.value = appViewState.adminUserSearch || "";
+      userSearchInput.addEventListener("input", function () {
+        appViewState.adminUserSearch = userSearchInput.value;
+        applyUserSearchFilter();
+      });
+      card.appendChild(userSearchInput);
+
       var tableWrap = el("div", "admin-table-wrap");
-      var loading = el("p", "muted");
-      loading.textContent = "Loading…";
+      var loading = renderLoadingIndicator();
       tableWrap.appendChild(loading);
       card.appendChild(tableWrap);
 
@@ -1575,6 +1783,7 @@
         appViewState.adminUsers.forEach(function (u) {
           var tr = document.createElement("tr");
           tr.id = "admin-user-row-" + u.id;
+          tr.setAttribute("data-search", [u.name, u.email, u.role, u.grade, u.verification_method, u.verification_status].join(" ").toLowerCase());
           var statusCls = u.verification_status === "approved" ? "badge-approved" : (u.verification_status === "rejected" ? "badge-rejected" : "badge-pending");
           tr.innerHTML = "<td>" + esc(u.name) + "</td><td>" + esc(u.email) + "</td><td></td><td></td><td>" + esc(u.verification_method) + "</td><td><span class='verification-badge " + statusCls + "'>" + esc(u.verification_status) + "</span></td><td></td>";
 
@@ -1620,12 +1829,45 @@
         });
         table.appendChild(tbody);
         tableWrap.appendChild(table);
+        userEmptyMsg = el("p", "muted");
+        userEmptyMsg.style.padding = "0.75rem 0 0";
+        userEmptyMsg.style.display = "none";
+        userEmptyMsg.textContent = "No users match your search.";
+        tableWrap.appendChild(userEmptyMsg);
+        userTbody = tbody;
+        applyUserSearchFilter();
       });
     }
 
     if (appViewState.adminTab === "posts") {
+      var postTbody = null;
+      var postEmptyMsg = null;
+      function applyPostSearchFilter() {
+        var q = (appViewState.adminPostSearch || "").trim().toLowerCase();
+        var visibleCount = 0;
+        if (postTbody) {
+          Array.prototype.forEach.call(postTbody.rows, function (row) {
+            var match = !q || (row.getAttribute("data-search") || "").indexOf(q) !== -1;
+            row.style.display = match ? "" : "none";
+            if (match) visibleCount++;
+          });
+        }
+        if (postEmptyMsg) postEmptyMsg.style.display = (q && visibleCount === 0) ? "" : "none";
+      }
+
+      var postSearchInput = document.createElement("input");
+      postSearchInput.type = "text";
+      postSearchInput.className = "admin-search-input";
+      postSearchInput.placeholder = "Search by title, author, space, section…";
+      postSearchInput.value = appViewState.adminPostSearch || "";
+      postSearchInput.addEventListener("input", function () {
+        appViewState.adminPostSearch = postSearchInput.value;
+        applyPostSearchFilter();
+      });
+      card.appendChild(postSearchInput);
+
       var postsWrap = el("div", "admin-table-wrap");
-      var postsLoading = el("p", "muted"); postsLoading.textContent = "Loading…";
+      var postsLoading = renderLoadingIndicator();
       postsWrap.appendChild(postsLoading);
       card.appendChild(postsWrap);
 
@@ -1637,6 +1879,7 @@
         var tb = document.createElement("tbody");
         data.forEach(function (p) {
           var tr = document.createElement("tr");
+          tr.setAttribute("data-search", [p.id, p.space_id, p.section, p.title, p.author_name, p.author_ip].join(" ").toLowerCase());
           tr.innerHTML = "<td>" + p.id + "</td><td>" + esc(p.space_id) + "</td><td>" + esc(p.section.split(" ")[0]) + "</td><td>" + esc(p.title.slice(0, 30)) + "</td><td>" + esc(p.author_name) + "</td><td>" + esc(p.author_ip || "—") + "</td><td>" + (p.is_anonymous ? "✓" : "") + "</td><td>" + fmtDate(p.created_at) + "</td><td></td>";
           var dc = tr.cells[8];
           var delBtn = el("button", "ghost-button admin-action-btn"); delBtn.textContent = "Delete";
@@ -1651,6 +1894,13 @@
         });
         tbl.appendChild(tb);
         postsWrap.appendChild(tbl);
+        postEmptyMsg = el("p", "muted");
+        postEmptyMsg.style.padding = "0.75rem 0 0";
+        postEmptyMsg.style.display = "none";
+        postEmptyMsg.textContent = "No posts match your search.";
+        postsWrap.appendChild(postEmptyMsg);
+        postTbody = tb;
+        applyPostSearchFilter();
       }).catch(function () {
         while (postsWrap.firstChild) postsWrap.removeChild(postsWrap.firstChild);
         var ep2 = el("p", "muted"); ep2.textContent = "Failed to load"; postsWrap.appendChild(ep2);
@@ -1658,8 +1908,24 @@
     }
 
     if (appViewState.adminTab === "spaces") {
+      var createBtnRow = el("div");
+      createBtnRow.style.marginBottom = "0.75rem";
+      var createBoardBtn = el("button", "primary-button small");
+      createBoardBtn.type = "button";
+      createBoardBtn.textContent = appViewState.showCreateBoardForm ? "Cancel" : "+ Create board";
+      createBoardBtn.addEventListener("click", function () {
+        appViewState.showCreateBoardForm = !appViewState.showCreateBoardForm;
+        render();
+      });
+      createBtnRow.appendChild(createBoardBtn);
+      card.appendChild(createBtnRow);
+
+      if (appViewState.showCreateBoardForm) {
+        card.appendChild(renderCreateBoardForm());
+      }
+
       var spacesWrap = el("div", "admin-table-wrap");
-      var spacesLoading = el("p", "muted"); spacesLoading.textContent = "Loading…";
+      var spacesLoading = renderLoadingIndicator();
       spacesWrap.appendChild(spacesLoading);
       card.appendChild(spacesWrap);
 
@@ -1819,6 +2085,8 @@
     }
     appRoot.appendChild(page);
   }
+
+  applyAccent(getStoredAccent());
 
   restoreSession().then(function (restored) {
     render();

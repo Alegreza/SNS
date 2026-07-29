@@ -143,6 +143,21 @@ router.delete("/posts/:id", async (req, res) => {
 
 // ── Space-Teacher Assignment ───────────────────────────────────────────────
 
+const DEFAULT_SECTIONS = ["Announcements & Assignments", "Questions", "Anonymous / Vent"];
+
+// spaces.sections is stored as a JSON-stringified array (or NULL for the app defaults)
+function parseSpaceRow(row) {
+  let sections = null;
+  if (row.sections) {
+    try { sections = JSON.parse(row.sections); } catch (e) { sections = null; }
+  }
+  return { ...row, sections: sections && sections.length ? sections : DEFAULT_SECTIONS };
+}
+
+function slugifyBoardName(name) {
+  return String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "board";
+}
+
 // GET /api/admin/spaces — all spaces with assigned teacher list
 router.get("/spaces", async (req, res) => {
   try {
@@ -158,10 +173,54 @@ router.get("/spaces", async (req, res) => {
       if (!bySpace[a.space_id]) bySpace[a.space_id] = [];
       bySpace[a.space_id].push({ id: a.id, name: a.name, email: a.email });
     });
-    res.json(spaces.map((s) => ({ ...s, teachers: bySpace[s.id] || [] })));
+    res.json(spaces.map((s) => ({ ...parseSpaceRow(s), teachers: bySpace[s.id] || [] })));
   } catch (e) {
     req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to load spaces" });
+  }
+});
+
+// POST /api/admin/spaces — create a new board, optionally with custom categories
+router.post("/spaces", async (req, res) => {
+  try {
+    const { name, type, grade, sections } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ error: "name is required" });
+    if (!["class", "subject", "club"].includes(type)) {
+      return res.status(400).json({ error: "type must be one of: class, subject, club" });
+    }
+
+    let gradeVal = null;
+    if (type === "class" || type === "subject") {
+      if (!["9", "10", "11", "12"].includes(String(grade))) {
+        return res.status(400).json({ error: "grade must be one of: 9, 10, 11, 12 for class/subject boards" });
+      }
+      gradeVal = String(grade);
+    }
+
+    let cleanedSections = null;
+    if (Array.isArray(sections)) {
+      cleanedSections = sections.map((s) => String(s || "").trim()).filter(Boolean).slice(0, 8);
+      if (!cleanedSections.length) cleanedSections = null;
+    }
+    const sectionsVal = cleanedSections ? JSON.stringify(cleanedSections) : null;
+
+    const trimmedName = String(name).trim();
+    let id = slugifyBoardName(trimmedName);
+    let suffix = 1;
+    while (await queryOne("SELECT id FROM spaces WHERE id = $1", [id])) {
+      suffix += 1;
+      id = `${slugifyBoardName(trimmedName)}-${suffix}`;
+    }
+
+    await pool.query(
+      "INSERT INTO spaces (id, type, name, grade, sections) VALUES ($1, $2, $3, $4, $5)",
+      [id, type, trimmedName, gradeVal, sectionsVal]
+    );
+    req.log && req.log.info({ event: "admin_create_space", spaceId: id, type, grade: gradeVal, byAdminId: req.user.id });
+    res.status(201).json({ id, type, name: trimmedName, grade: gradeVal, sections: cleanedSections || DEFAULT_SECTIONS, teachers: [] });
+  } catch (e) {
+    req.log && req.log.error(e);
+    res.status(500).json({ error: "Failed to create board" });
   }
 });
 

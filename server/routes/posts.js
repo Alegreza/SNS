@@ -12,6 +12,15 @@ function sanitizePost(p, userRole) {
   return { ...p, author_name: "Anonymous", author_id: null, author_ip: null };
 }
 
+// spaces.sections is stored as a JSON-stringified array (or NULL for the app defaults)
+function parseSpaceRow(row) {
+  let sections = null;
+  if (row.sections) {
+    try { sections = JSON.parse(row.sections); } catch (e) { sections = null; }
+  }
+  return { ...row, sections: sections && sections.length ? sections : SECTIONS };
+}
+
 // GET /api/spaces
 router.get("/spaces", auth, async (req, res) => {
   try {
@@ -37,7 +46,7 @@ router.get("/spaces", auth, async (req, res) => {
         [req.user.grade]
       );
     }
-    res.json(rows);
+    res.json(rows.map(parseSpaceRow));
   } catch (e) {
     req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to load spaces" });
@@ -114,15 +123,17 @@ router.post("/posts", auth, async (req, res) => {
     if (!spaceId || !section || !title || !content) {
       return res.status(400).json({ error: "spaceId, section, title, content required" });
     }
-    if (!SECTIONS.includes(section)) {
+
+    const spaceRow = await queryOne("SELECT * FROM spaces WHERE id = $1", [spaceId]);
+    if (!spaceRow) return res.status(404).json({ error: "Space not found" });
+    const space = parseSpaceRow(spaceRow);
+
+    if (!space.sections.includes(section)) {
       return res.status(400).json({ error: "Invalid section" });
     }
     if (STUDENT_ONLY_SECTIONS.includes(section) && req.user.role === "teacher") {
       return res.status(403).json({ error: "Teachers cannot post in this section" });
     }
-
-    const space = await queryOne("SELECT id FROM spaces WHERE id = $1", [spaceId]);
-    if (!space) return res.status(404).json({ error: "Space not found" });
 
     const anonymous = isAnonymous ? 1 : 0;
     const authorName = isAnonymous ? "Anonymous" : req.user.name;
