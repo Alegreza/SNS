@@ -58,6 +58,41 @@ router.patch("/users/:id/verify", async (req, res) => {
   }
 });
 
+// PATCH /api/admin/users/:id — edit role and/or grade
+router.patch("/users/:id", async (req, res) => {
+  try {
+    const { role, grade } = req.body;
+    const validRoles = ["student", "teacher", "admin"];
+    if (role !== undefined && !validRoles.includes(role)) {
+      return res.status(400).json({ error: "role must be one of: " + validRoles.join(", ") });
+    }
+    const validGrades = ["9", "10", "11", "12"];
+    if (grade !== undefined && grade !== null && grade !== "" && !validGrades.includes(String(grade))) {
+      return res.status(400).json({ error: "grade must be one of: " + validGrades.join(", ") });
+    }
+
+    const user = await queryOne("SELECT id FROM users WHERE id = $1", [req.params.id]);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const fields = [];
+    const params = [];
+    if (role !== undefined) { params.push(role); fields.push(`role = $${params.length}`); }
+    if (grade !== undefined) { params.push(grade || null); fields.push(`grade = $${params.length}`); }
+    if (!fields.length) return res.status(400).json({ error: "Nothing to update" });
+
+    params.push(req.params.id);
+    await pool.query(
+      `UPDATE users SET ${fields.join(", ")}, updated_at = NOW() WHERE id = $${params.length}`,
+      params
+    );
+    req.log && req.log.info({ event: "admin_edit_user", targetUserId: Number(req.params.id), role, grade, byAdminId: req.user.id });
+    res.json({ ok: true, id: Number(req.params.id), role, grade });
+  } catch (e) {
+    req.log && req.log.error(e);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
 // ── Posts (admin view: real authors + IPs for anonymous) ───────────────────
 
 // GET /api/admin/posts?spaceId=&section=&limit=&offset=

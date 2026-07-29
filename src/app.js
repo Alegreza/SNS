@@ -1052,7 +1052,7 @@
 
     if (screen === "choose") {
       var t = el("h2");
-      t.textContent = "Kobe";
+      t.textContent = "Welcome";
       t.style.color = "var(--color-primary)";
       var d = el("p", "login-sub");
       d.textContent = "Cranbrook School exclusive community";
@@ -1576,8 +1576,38 @@
           var tr = document.createElement("tr");
           tr.id = "admin-user-row-" + u.id;
           var statusCls = u.verification_status === "approved" ? "badge-approved" : (u.verification_status === "rejected" ? "badge-rejected" : "badge-pending");
-          tr.innerHTML = "<td>" + esc(u.name) + "</td><td>" + esc(u.email) + "</td><td>" + esc(u.role) + "</td><td>" + esc(u.grade || "—") + "</td><td>" + esc(u.verification_method) + "</td><td><span class='verification-badge " + statusCls + "'>" + esc(u.verification_status) + "</span></td><td></td>";
+          tr.innerHTML = "<td>" + esc(u.name) + "</td><td>" + esc(u.email) + "</td><td></td><td></td><td>" + esc(u.verification_method) + "</td><td><span class='verification-badge " + statusCls + "'>" + esc(u.verification_status) + "</span></td><td></td>";
+
+          var roleSelect = document.createElement("select");
+          roleSelect.className = "admin-inline-select";
+          ["student", "teacher", "admin"].forEach(function (r) {
+            var opt = document.createElement("option");
+            opt.value = r;
+            opt.textContent = r.charAt(0).toUpperCase() + r.slice(1);
+            if (r === u.role) opt.selected = true;
+            roleSelect.appendChild(opt);
+          });
+          tr.cells[2].appendChild(roleSelect);
+
+          var gradeSelect = document.createElement("select");
+          gradeSelect.className = "admin-inline-select";
+          ["", "9", "10", "11", "12"].forEach(function (g) {
+            var opt = document.createElement("option");
+            opt.value = g;
+            opt.textContent = g || "—";
+            if ((u.grade || "") === g) opt.selected = true;
+            gradeSelect.appendChild(opt);
+          });
+          tr.cells[3].appendChild(gradeSelect);
+
           var ac = tr.cells[6];
+          var saveBtn = el("button", "ghost-button admin-action-btn");
+          saveBtn.textContent = "Save";
+          saveBtn.addEventListener("click", function () {
+            handleAdminEditUser(u.id, roleSelect.value, gradeSelect.value, tr);
+          });
+          ac.appendChild(saveBtn);
+
           if (u.verification_status !== "approved") {
             var ab = el("button", "primary-button admin-action-btn"); ab.textContent = "Approve";
             ab.addEventListener("click", function () { handleAdminVerify(u.id, "approved", tr); }); ac.appendChild(ab);
@@ -1716,6 +1746,14 @@
         tr.cells[5].innerHTML = '<span class="verification-badge ' + statusCls + '">' + esc(status) + "</span>";
         var actionCell = tr.cells[6];
         while (actionCell.firstChild) actionCell.removeChild(actionCell.firstChild);
+        var roleSel = tr.cells[2].querySelector("select");
+        var gradeSel = tr.cells[3].querySelector("select");
+        var saveBtn = el("button", "ghost-button admin-action-btn");
+        saveBtn.textContent = "Save";
+        saveBtn.addEventListener("click", function () {
+          handleAdminEditUser(userId, roleSel.value, gradeSel.value, tr);
+        });
+        actionCell.appendChild(saveBtn);
         if (status !== "approved") {
           var approveBtn = el("button", "primary-button admin-action-btn");
           approveBtn.textContent = "Approve";
@@ -1737,6 +1775,24 @@
       .catch(function (e) {
         btns.forEach(function (b) { b.disabled = false; });
         alert(e.message || "Failed to update status");
+      });
+  }
+
+  function handleAdminEditUser(userId, role, grade, tr) {
+    var btns = tr.cells[6].querySelectorAll("button");
+    btns.forEach(function (b) { b.disabled = true; });
+
+    apiCall("/admin/users/" + userId, { method: "PATCH", body: { role: role, grade: grade || null } })
+      .then(function () {
+        btns.forEach(function (b) { b.disabled = false; });
+        if (appViewState.adminUsers) {
+          var u = appViewState.adminUsers.filter(function (u) { return u.id === userId; })[0];
+          if (u) { u.role = role; u.grade = grade || null; }
+        }
+      })
+      .catch(function (e) {
+        btns.forEach(function (b) { b.disabled = false; });
+        alert(e.message || "Failed to update user");
       });
   }
 
