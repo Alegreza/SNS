@@ -984,6 +984,17 @@
     return wrap;
   }
 
+  function renderEmptyState(icon, text) {
+    var wrap = el("div", "empty-state");
+    var iconEl = el("div", "empty-state-icon");
+    iconEl.textContent = icon;
+    var textEl = el("p", "empty-state-text");
+    textEl.textContent = text;
+    wrap.appendChild(iconEl);
+    wrap.appendChild(textEl);
+    return wrap;
+  }
+
   function renderNavbar(container) {
     var nav = el("nav", "top-navbar");
 
@@ -1308,9 +1319,7 @@
     feedCard.appendChild(feedTitle);
     var feed = getHomeFeed();
     if (feed.length === 0) {
-      var fp = el("p", "muted");
-      fp.textContent = "No posts yet. Be the first to post.";
-      feedCard.appendChild(fp);
+      feedCard.appendChild(renderEmptyState("📭", "No posts yet. Be the first to post."));
     } else {
       var fl = el("div", "post-list");
       feed.forEach(function (post) {
@@ -1405,10 +1414,7 @@
       postListEl.appendChild(listHeader);
 
       if (postsInSpace.length === 0) {
-        var np = el("p", "muted");
-        np.style.padding = "1rem";
-        np.textContent = "No posts yet.";
-        postListEl.appendChild(np);
+        postListEl.appendChild(renderEmptyState("📭", "No posts yet."));
       } else {
         postsInSpace.forEach(function (post) {
           postListEl.appendChild(renderPostCard(post, { showSpace: false }));
@@ -1431,7 +1437,7 @@
     var lt = el("span", "post-list-title"); lt.textContent = "Q&A / Anonymous Vent";
     lh.appendChild(lt); listEl.appendChild(lh);
     if (feed.length === 0) {
-      var p = el("p", "muted"); p.style.padding = "1rem"; p.textContent = "No posts yet."; listEl.appendChild(p);
+      listEl.appendChild(renderEmptyState("💬", "No posts yet."));
     } else {
       feed.forEach(function (post) {
         var sn = spaces.filter(function (s) { return s.id === post.spaceId; })[0];
@@ -1458,7 +1464,7 @@
 
     var notifs = appViewState.notifications;
     if (notifs.length === 0) {
-      var p = el("p", "muted"); p.textContent = "No notifications yet."; card.appendChild(p);
+      card.appendChild(renderEmptyState("🔔", "No notifications yet."));
     } else {
       var today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -1957,22 +1963,46 @@
         while (spacesWrap.firstChild) spacesWrap.removeChild(spacesWrap.firstChild);
 
         spaceData.forEach(function (sp) {
-          var row = el("div", "card");
-          row.style.marginBottom = "0.5rem";
+          var row = el("div", "card space-assign-card");
+
+          var header = el("div", "space-assign-header");
           var rowTitle = el("strong");
-          rowTitle.textContent = sp.name + " (" + sp.type + ")";
-          row.appendChild(rowTitle);
+          rowTitle.textContent = sp.name;
+          var typeBadge = el("span", "space-type-badge");
+          typeBadge.textContent = sp.type;
+          header.appendChild(rowTitle);
+          header.appendChild(typeBadge);
+          row.appendChild(header);
 
-          var teacherList = el("p", "muted");
-          teacherList.style.margin = "0.3rem 0";
-          teacherList.textContent = sp.teachers && sp.teachers.length
-            ? "Assigned teachers: " + sp.teachers.map(function (t) { return t.name; }).join(", ")
-            : "No teachers assigned";
-          row.appendChild(teacherList);
+          var chipRow = el("div", "teacher-chip-row");
+          if (sp.teachers && sp.teachers.length) {
+            sp.teachers.forEach(function (t) {
+              var chip = el("span", "teacher-chip");
+              var chipLabel = document.createElement("span");
+              chipLabel.textContent = t.name;
+              var removeBtn = el("button", "teacher-chip-remove");
+              removeBtn.type = "button";
+              removeBtn.textContent = "✕";
+              removeBtn.setAttribute("aria-label", "Remove " + t.name);
+              removeBtn.addEventListener("click", function () {
+                apiCall("/admin/spaces/" + sp.id + "/teachers/" + t.id, { method: "DELETE" }).then(function () {
+                  appViewState.adminTab = "spaces"; render();
+                }).catch(function (e) { alert(e.message || "Remove failed"); });
+              });
+              chip.appendChild(chipLabel);
+              chip.appendChild(removeBtn);
+              chipRow.appendChild(chip);
+            });
+          } else {
+            var noTeachers = el("span", "muted");
+            noTeachers.textContent = "No teachers assigned";
+            chipRow.appendChild(noTeachers);
+          }
+          row.appendChild(chipRow);
 
-          // Teacher assign select
+          var assignRow = el("div", "teacher-assign-row");
           var sel = document.createElement("select");
-          sel.style.cssText = "font-size:0.85rem;padding:0.25rem;margin-right:0.4rem;border:1px solid var(--color-border);border-radius:3px;color:var(--color-text);background:var(--color-surface);";
+          sel.className = "admin-inline-select";
           var opt0 = document.createElement("option"); opt0.value = ""; opt0.textContent = "Select a teacher…"; sel.appendChild(opt0);
           allUsers.forEach(function (u) {
             var opt = document.createElement("option"); opt.value = u.id; opt.textContent = u.name + " (" + u.email + ")"; sel.appendChild(opt);
@@ -1984,22 +2014,10 @@
               appViewState.adminTab = "spaces"; render();
             }).catch(function (e) { alert(e.message || "Assignment failed"); });
           });
-          row.appendChild(sel);
-          row.appendChild(assignBtn);
+          assignRow.appendChild(sel);
+          assignRow.appendChild(assignBtn);
+          row.appendChild(assignRow);
 
-          // Remove buttons for existing teachers
-          if (sp.teachers && sp.teachers.length) {
-            sp.teachers.forEach(function (t) {
-              var removeBtn = el("button", "ghost-button small"); removeBtn.textContent = t.name + " Remove";
-              removeBtn.style.marginLeft = "0.4rem";
-              removeBtn.addEventListener("click", function () {
-                apiCall("/admin/spaces/" + sp.id + "/teachers/" + t.id, { method: "DELETE" }).then(function () {
-                  appViewState.adminTab = "spaces"; render();
-                }).catch(function (e) { alert(e.message || "Remove failed"); });
-              });
-              row.appendChild(removeBtn);
-            });
-          }
           spacesWrap.appendChild(row);
         });
       }).catch(function () {

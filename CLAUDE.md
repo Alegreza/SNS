@@ -193,6 +193,11 @@ UPLOAD_DIR=./data/uploads
 - **Sequential anonymous nicknames** ("Anonymous 1", "Anonymous 2", ...) per comment thread — one of Everytime's most recognizable UX patterns, letting readers follow a conversation between anonymous commenters without revealing who anyone is. New `sanitizeAnonymousComments()` in `server/routes/comments.js`, shared between the GET list and the POST response (so a freshly-posted anonymous comment shows the right number immediately, not just after a reload). Numbered by order of first appearance in that specific post's thread; a comment author whose account was since deleted (`author_id` null) falls back to plain "Anonymous" since there's no longer any way to distinguish them from other deleted accounts.
 - **Typography**: post titles bumped to `font-weight: 700` (was 500) for stronger hierarchy against muted preview text; comment text given `line-height: 1.6` for reading comfort.
 
+### ✅ Phase 9 — Design Audit Fixes [Done, 2026-07-30]
+- **Mobile navbar bug**: at narrow widths (6 tabs + user info + sign out), tabs wrapped and the right-side cluster got clipped off-screen. Fixed: `.navbar-tabs` scrolls horizontally instead of wrapping, "Cranbrook School" subtitle hides on mobile to save space.
+- **Empty states**: `renderEmptyState(icon, text)` helper — centered icon + muted text, replacing bare `<p class="muted">No posts yet.</p>` across the main feed, boards, Q&A, and notifications views. Left the small nested "No comments yet." as plain text — a big icon there would look oversized for its context.
+- **Admin Space Assignment cards**: replaced the plain-text teacher list + buttons whose labels literally concatenated ("Mr. Kim Remove") with proper teacher chips (pill + × remove button) and a clearly separated assign row, plus a type badge (CLASS/CLUB/SUBJECT).
+
 ---
 
 ## Starting a New Session
