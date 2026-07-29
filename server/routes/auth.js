@@ -173,7 +173,7 @@ router.post("/signup", upload.single("student_id"), async (req, res) => {
         : "School verification pending. Your student ID will be reviewed."
     });
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Signup failed" });
   }
 });
@@ -201,7 +201,7 @@ router.post("/login", async (req, res) => {
 
     res.json({ user: userResponse(user), token: signToken(user) });
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Login failed" });
   }
 });
@@ -283,7 +283,7 @@ router.post("/google", upload.single("student_id"), async (req, res) => {
         : "School verification pending."
     });
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Google auth failed" });
   }
 });
@@ -299,7 +299,7 @@ router.post("/microsoft", upload.single("student_id"), async (req, res) => {
     try {
       payload = await verifyMicrosoftToken(access_token);
     } catch (verifyErr) {
-      console.error("Microsoft token verification failed:", verifyErr.message);
+      req.log && req.log.error({ err: verifyErr.message }, "Microsoft token verification failed");
       return res.status(401).json({ error: "Invalid Microsoft token" });
     }
 
@@ -369,7 +369,7 @@ router.post("/microsoft", upload.single("student_id"), async (req, res) => {
         : "School verification pending."
     });
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Microsoft auth failed" });
   }
 });
@@ -381,7 +381,7 @@ router.get("/me", auth, async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json(userResponse(user));
   } catch (e) {
-    console.error(e);
+    req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to get user" });
   }
 });
