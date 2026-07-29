@@ -32,7 +32,18 @@ const app = express();
 // Trust Render's proxy so req.ip reflects the real client IP
 app.set("trust proxy", 1);
 
-app.use(cors({ origin: true, credentials: true }));
+const allowedOrigins = [
+  "https://cksns.live",
+  "https://www.cksns.live",
+  "http://localhost:3000"
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true
+}));
 app.use(express.json());
 app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === "/api/health" } }));
 

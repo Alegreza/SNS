@@ -60,6 +60,11 @@ async function verifyMicrosoftToken(token) {
   return payload;
 }
 
+// Roles a user may grant themselves at signup. "admin" is never client-assignable —
+// admin accounts are only created by promoting an existing verified user directly in the DB.
+const SELF_SIGNUP_ROLES = ["student", "teacher"];
+const VERIFICATION_METHODS = ["manual", "student_id", "school_sso"];
+
 const router = express.Router();
 
 // Ensure upload dir exists
@@ -112,7 +117,10 @@ router.post("/signup", upload.single("student_id"), async (req, res) => {
     if (!email || !password || !name || !role || !verification_method) {
       return res.status(400).json({ error: "Missing required fields: email, password, name, role, verification_method" });
     }
-    if (!["manual", "student_id", "school_sso"].includes(verification_method)) {
+    if (!SELF_SIGNUP_ROLES.includes(role)) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+    if (!VERIFICATION_METHODS.includes(verification_method)) {
       return res.status(400).json({ error: "Invalid verification_method" });
     }
     if (verification_method === "student_id" && !req.file) {
@@ -232,6 +240,12 @@ router.post("/google", upload.single("student_id"), async (req, res) => {
     if (!name || !role || !verification_method) {
       return res.status(400).json({ error: "New user: provide name, role, verification_method", email, name_from_google: payload.name });
     }
+    if (!SELF_SIGNUP_ROLES.includes(role)) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+    if (!VERIFICATION_METHODS.includes(verification_method)) {
+      return res.status(400).json({ error: "Invalid verification_method" });
+    }
     if (verification_method === "student_id" && !req.file) {
       return res.status(400).json({ error: "Student ID photo required" });
     }
@@ -311,6 +325,12 @@ router.post("/microsoft", upload.single("student_id"), async (req, res) => {
 
     if (!name || !role || !verification_method) {
       return res.status(400).json({ error: "New user: provide name, role, verification_method", email, name_from_ms: payload.name });
+    }
+    if (!SELF_SIGNUP_ROLES.includes(role)) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+    if (!VERIFICATION_METHODS.includes(verification_method)) {
+      return res.status(400).json({ error: "Invalid verification_method" });
     }
     if (verification_method === "student_id" && !req.file) {
       return res.status(400).json({ error: "Student ID photo required" });
