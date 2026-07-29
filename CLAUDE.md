@@ -188,6 +188,11 @@ UPLOAD_DIR=./data/uploads
 - **Security hardening**: server-side content sanitization (`server/sanitize.js`, strips all HTML from post/comment content via DOMPurify before storage) and CSP headers via `helmet` (see Tech Stack). Caught and fixed a real gap post-deploy: Google's Sign-In script loads its own stylesheet from `accounts.google.com`, which the initial CSP didn't allowlist.
 - **Bug fixes found along the way**: notification timestamps were using Korean locale formatting (`toLocaleString("ko-KR", ...)`) instead of the app's standard `fmtDate()` — violated the English-only rule; `auth.js` used raw `console.error` in all 6 catch blocks instead of the project's `req.log.error` convention, so auth failures weren't in Render's structured logs; default active section after login/board-switch was hardcoded to `"Announcements & Assignments"` in 7 places, which breaks for boards with fully custom categories — replaced with `defaultSectionForSpace()`.
 
+### ✅ Phase 8 — Everytime-Benchmarked Readability Pass [Done, 2026-07-30]
+- **Relative timestamps**: new `timeAgo()` in `app.js` — "3m ago" / "2h ago" / "5d ago", falling back to the absolute `fmtDate()` after a week. Applied to post cards, comments, notifications (exact timestamp still available via a `title` tooltip). Admin tables keep absolute dates — precision matters more than casualness there.
+- **Sequential anonymous nicknames** ("Anonymous 1", "Anonymous 2", ...) per comment thread — one of Everytime's most recognizable UX patterns, letting readers follow a conversation between anonymous commenters without revealing who anyone is. New `sanitizeAnonymousComments()` in `server/routes/comments.js`, shared between the GET list and the POST response (so a freshly-posted anonymous comment shows the right number immediately, not just after a reload). Numbered by order of first appearance in that specific post's thread; a comment author whose account was since deleted (`author_id` null) falls back to plain "Anonymous" since there's no longer any way to distinguish them from other deleted accounts.
+- **Typography**: post titles bumped to `font-weight: 700` (was 500) for stronger hierarchy against muted preview text; comment text given `line-height: 1.6` for reading comfort.
+
 ---
 
 ## Starting a New Session

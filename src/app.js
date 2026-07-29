@@ -819,6 +819,22 @@
     return new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
+  // Relative "3m ago" style timestamp for recent items, falling back to an
+  // absolute date once something is more than a week old (Everytime-style
+  // feed readability — exact time is still available via a title tooltip).
+  function timeAgo(d) {
+    var diffSec = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+    if (diffSec < 5) return "just now";
+    if (diffSec < 60) return diffSec + "s ago";
+    var diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return diffMin + "m ago";
+    var diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return diffHr + "h ago";
+    var diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return diffDay + "d ago";
+    return fmtDate(d);
+  }
+
   function renderPostCard(post, opts) {
     opts = opts || {};
     var isAdmin = userState.role === "admin";
@@ -857,7 +873,8 @@
     var authorSpan = document.createElement("span");
     authorSpan.textContent = post.authorName;
     var dateSpan = document.createElement("span");
-    dateSpan.textContent = fmtDate(post.createdAt);
+    dateSpan.textContent = timeAgo(post.createdAt);
+    dateSpan.title = fmtDate(post.createdAt);
     meta.appendChild(authorSpan);
     meta.appendChild(dateSpan);
     article.appendChild(meta);
@@ -895,7 +912,8 @@
           var ct = el("p", "comment-text");
           ct.textContent = c.content;
           var cd = el("span", "comment-date");
-          cd.textContent = fmtDate(c.created_at);
+          cd.textContent = timeAgo(c.created_at);
+          cd.title = fmtDate(c.created_at);
           // Admin reveal for anonymous comments
           if (isAdmin && c.is_anonymous) {
             var cr = el("span", "admin-reveal");
@@ -1465,7 +1483,8 @@
           var li = el("li", "notif-item" + (n.is_read ? "" : " notif-unread"));
           var msg = el("span", "notif-message"); msg.textContent = n.message;
           var ts = el("span", "notif-time");
-          ts.textContent = fmtDate(n.created_at);
+          ts.textContent = timeAgo(n.created_at);
+          ts.title = fmtDate(n.created_at);
           li.appendChild(msg); li.appendChild(ts);
           if (!n.is_read) {
             var readBtn = el("button", "ghost-button tiny");

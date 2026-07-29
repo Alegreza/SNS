@@ -359,7 +359,7 @@ body {
 .post-title {
   flex: 1;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
@@ -497,7 +497,7 @@ body {
 .comment-item:last-of-type { border-bottom: none; }
 
 .comment-author { font-weight: 600; color: var(--color-text); }
-.comment-text { color: var(--color-text); }
+.comment-text { color: var(--color-text); line-height: 1.6; }
 .comment-date { color: var(--color-text-muted); font-size: 0.75rem; }
 
 .comment-form {

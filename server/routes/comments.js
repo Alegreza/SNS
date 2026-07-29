@@ -4,6 +4,25 @@ const { pool, query, queryOne } = require("../db");
 const { auth } = require("../middleware/auth");
 const { sanitizeText } = require("../sanitize");
 
+// Give each distinct anonymous commenter a stable per-thread number ("Anonymous 1",
+// "Anonymous 2", ...) instead of an indistinguishable "Anonymous" for everyone —
+// lets readers follow a conversation between anonymous commenters without revealing
+// who anyone actually is. Sequenced by order of first comment in this thread
+// (comments must already be in created_at ASC order).
+function sanitizeAnonymousComments(comments, isAdmin) {
+  const anonSeq = new Map();
+  let nextSeq = 1;
+  return comments.map((c) => {
+    if (!c.is_anonymous || isAdmin) return c;
+    let label = "Anonymous";
+    if (c.author_id != null) {
+      if (!anonSeq.has(c.author_id)) anonSeq.set(c.author_id, nextSeq++);
+      label = "Anonymous " + anonSeq.get(c.author_id);
+    }
+    return { ...c, author_name: label, author_id: null, author_ip: null };
+  });
+}
+
 // GET /api/posts/:id/comments
 router.get("/", auth, async (req, res) => {
   try {
@@ -17,12 +36,7 @@ router.get("/", auth, async (req, res) => {
     );
 
     const isAdmin = req.user.role === "admin";
-    const sanitized = comments.map((c) =>
-      c.is_anonymous && !isAdmin
-        ? { ...c, author_name: "Anonymous", author_id: null, author_ip: null }
-        : c
-    );
-    res.json(sanitized);
+    res.json(sanitizeAnonymousComments(comments, isAdmin));
   } catch (e) {
     req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to load comments" });
@@ -75,13 +89,17 @@ router.post("/", auth, async (req, res) => {
 
     req.log && req.log.info({ event: "comment_created", commentId: comment.id, postId, userId: req.user.id, isAnonymous: anonymous });
 
-    // Return sanitized version to non-admins
+    // Re-derive the same per-thread anonymous numbering the GET list uses, so a
+    // freshly-posted anonymous comment shows "Anonymous N" immediately instead of
+    // plain "Anonymous" until the next reload.
     const isAdmin = req.user.role === "admin";
-    res.status(201).json(
-      comment.is_anonymous && !isAdmin
-        ? { ...comment, author_name: "Anonymous", author_id: null, author_ip: null }
-        : comment
+    const allComments = await query(
+      "SELECT * FROM comments WHERE post_id = $1 ORDER BY created_at ASC",
+      [postId]
     );
+    const sanitized = sanitizeAnonymousComments(allComments, isAdmin);
+    const responseComment = sanitized.find((c) => c.id === comment.id) || comment;
+    res.status(201).json(responseComment);
   } catch (e) {
     await client.query("ROLLBACK");
     req.log && req.log.error(e);
