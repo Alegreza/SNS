@@ -8,7 +8,11 @@ const bcrypt = require("bcrypt");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  // node-postgres defaults to no timeout at all here — an unreachable or
+  // slow-to-wake database (e.g. a paused Supabase project) would otherwise
+  // hang every request on the server indefinitely instead of failing fast.
+  connectionTimeoutMillis: 10000
 });
 
 async function query(sql, params) {
