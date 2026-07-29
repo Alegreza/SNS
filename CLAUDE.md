@@ -200,6 +200,7 @@ UPLOAD_DIR=./data/uploads
 - **Keyboard focus rings**: buttons/links previously relied on the browser's unstyled default focus outline. Added a consistent `:focus-visible` ring using the current accent color. Caught a real contrast bug while testing with actual Tab-key navigation (not just `.focus()`, which doesn't reliably trigger `:focus-visible`): on the navbar itself, an accent-colored ring is invisible against the same-colored accent background — overridden to white specifically for `.top-navbar button/a`.
 - **Card elevation**: the 5 "surface card" containers (`.card`, `.sidebar-section`, `.post-list`, `.composer`, `.login-card`) had a flat border and no shadow at all, despite `--shadow-sm`/`--shadow-md` tokens already existing unused. Added `box-shadow: var(--shadow-sm)` to all 5 for a consistent, subtle lift.
 - **Admin table copy**: `verification_method` was rendered as its raw DB enum value (`student_id`, `school_sso`) instead of a readable label. New `prettyVerificationMethod()` in `app.js`.
+- **Custom category tab overflow bug**: a board with several/long custom categories (from the create-board feature in Phase 7) made `.section-tabs` wrap onto multiple uneven lines. Same fix pattern as the mobile navbar — scrolls horizontally instead of wrapping. Found by actually testing the custom-categories feature with realistic long names, not just the 3 short defaults.
 
 ---
 

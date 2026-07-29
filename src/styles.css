@@ -461,7 +461,11 @@ body {
   gap: 0;
   margin-bottom: 0.75rem;
   border-bottom: 2px solid var(--color-border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.section-tabs::-webkit-scrollbar { display: none; }
 
 .section-tab {
   padding: 0.55rem 1rem;
@@ -473,6 +477,8 @@ body {
   margin-bottom: -2px;
   cursor: pointer;
   color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
 .section-tab:hover { color: var(--color-text); }
