@@ -200,6 +200,7 @@
     notifications: [],
     unreadCount: 0,
     pendingMsAccount: null,
+    pendingGoogleAccount: null,
     msalInstance: null,
     useDevForm: false,
     authScreen: "choose",
@@ -531,6 +532,119 @@
       });
   }
 
+  function decodeJwtPayload(token) {
+    try {
+      var base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      var json = decodeURIComponent(atob(base64).split("").map(function (c) {
+        return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(""));
+      return JSON.parse(json);
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function handleGoogleCredentialResponse(response) {
+    var idToken = response && response.credential;
+    if (!idToken) return;
+    var claims = decodeJwtPayload(idToken);
+    apiCall("/auth/google", { method: "POST", body: { id_token: idToken } })
+      .then(function (res) {
+        localStorage.setItem("cksns_token", res.token);
+        loginFromApiUser(res.user);
+        appViewState.authScreen = "choose";
+        appViewState.activeTab = "home";
+        return Promise.all([loadSpaces(), loadFeed()]);
+      }).then(function () {
+        var ds = getSpacesForUser()[0];
+        appViewState.activeSpaceId = ds ? ds.id : null;
+        startNotifPolling();
+        render();
+      })
+      .catch(function (e) {
+        if (e.message && e.message.indexOf("New user") !== -1) {
+          appViewState.pendingGoogleAccount = { name: claims.name || "User", email: claims.email || "", token: idToken };
+          render();
+        } else {
+          alert(e.message || "Google sign-in failed");
+        }
+      });
+  }
+
+  function handleCompleteGoogleProfileSubmit(ev) {
+    ev.preventDefault();
+    var f = ev.target;
+    var pending = appViewState.pendingGoogleAccount;
+    if (!pending || !pending.token) { alert("Session expired. Please try again."); render(); return; }
+
+    var role = f.role && f.role.value;
+    var grade = f.grade && f.grade.value;
+    var username = (f.username && f.username.value || "").trim();
+    var school_email = (f.school_email && f.school_email.value || "").trim();
+    var verification_method = f.verification_method && f.verification_method.value;
+    var student_id = f.student_id && f.student_id.files && f.student_id.files[0];
+
+    if (!role || !grade || !verification_method) {
+      alert("Please fill in role, grade, and verification method.");
+      return;
+    }
+    if (verification_method === "student_id" && !student_id) {
+      alert("Please upload your student ID photo.");
+      return;
+    }
+
+    var body = new FormData();
+    body.append("id_token", pending.token);
+    body.append("name", pending.name || "");
+    if (username) body.append("username", username);
+    body.append("school_email", school_email);
+    body.append("role", role);
+    body.append("grade", grade);
+    body.append("verification_method", verification_method);
+    if (student_id) body.append("student_id", student_id);
+
+    fetch(API + "/auth/google", {
+      method: "POST",
+      body: body
+    })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (j) { throw new Error(j.error || "Signup failed"); });
+        return r.json();
+      })
+      .then(function (res) {
+        localStorage.setItem("cksns_token", res.token);
+        loginFromApiUser(res.user);
+        appViewState.pendingGoogleAccount = null;
+        appViewState.authScreen = "choose";
+        appViewState.activeTab = "home";
+        if (res.message) pushNotification(res.message);
+        return Promise.all([loadSpaces(), loadFeed()]);
+      }).then(function () {
+        var ds = getSpacesForUser()[0];
+        appViewState.activeSpaceId = ds ? ds.id : null;
+        startNotifPolling();
+        render();
+      })
+      .catch(function (e) {
+        alert(e.message || "Signup failed");
+      });
+  }
+
+  function initGoogleButton(containerId, attempt) {
+    attempt = attempt || 0;
+    var ac = window.AUTH_CONFIG || {};
+    if (!ac.googleClientId) return;
+    var G = window.google;
+    if (!G || !G.accounts || !G.accounts.id) {
+      if (attempt < 10) setTimeout(function () { initGoogleButton(containerId, attempt + 1); }, 300);
+      return;
+    }
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    G.accounts.id.initialize({ client_id: ac.googleClientId, callback: handleGoogleCredentialResponse });
+    G.accounts.id.renderButton(container, { theme: "outline", size: "large", width: 280 });
+  }
+
   function handleLogoutClick() {
     stopNotifPolling();
     logout();
@@ -783,6 +897,8 @@
     var adminEmail = ac.adminEmail || "mkim28@cranbrook.edu";
     var msCfg = window.MSAL_CONFIG;
     var msalReady = msCfg && msCfg.clientId && msCfg.clientId !== "YOUR_CLIENT_ID" && (typeof window.msal !== "undefined" || typeof msal !== "undefined");
+    var gCfg = window.AUTH_CONFIG || {};
+    var googleReady = !!(gCfg && gCfg.googleClientId);
 
     var card = el("section", "login-card");
 
@@ -809,6 +925,34 @@
       setTimeout(function () {
         var backBtn = document.getElementById("ms-back-btn");
         if (backBtn) backBtn.addEventListener("click", function () { appViewState.pendingMsAccount = null; render(); });
+      }, 0);
+      return;
+    }
+
+    var pendingG = appViewState.pendingGoogleAccount;
+    if (pendingG && pendingG.token) {
+      var titleG = el("h2");
+      titleG.textContent = "Complete your profile";
+      var descG = el("p", "muted");
+      descG.textContent = "Signed in with Google. Fill in below and choose school verification.";
+      var formG = el("form", "form-grid");
+      formG.innerHTML = '<div class="form-field"><label>Name</label><input type="text" value="' + esc(pendingG.name) + '" readonly disabled /></div>' +
+        '<div class="form-field"><label>Email</label><input type="text" value="' + esc(pendingG.email) + '" readonly disabled /></div>' +
+        '<div class="form-field"><label for="username">Username (optional)</label><input id="username" name="username" type="text" placeholder="Login with email or username" /></div>' +
+        '<div class="form-field"><label for="school_email">School email (optional)</label><input id="school_email" name="school_email" type="email" /></div>' +
+        '<div class="form-field"><label for="role">Role</label><select id="role" name="role" required><option value="">Select</option><option value="student">Student</option><option value="teacher">Teacher</option></select></div>' +
+        '<div class="form-field"><label for="grade">Grade</label><select id="grade" name="grade" required><option value="">Select</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></div>' +
+        '<div class="form-field"><label>School verification</label><label class="radio-option"><input type="radio" name="verification_method" value="manual" checked /> Manual: Contact ' + esc(adminEmail) + '</label><label class="radio-option"><input type="radio" name="verification_method" value="student_id" /> Upload student ID</label><input type="file" name="student_id" accept="image/*" /></div>' +
+        '<div class="form-actions"><button type="submit" class="primary-button">Continue</button><button type="button" class="ghost-button" id="google-back-btn">Use different account</button></div>';
+      formG.addEventListener("submit", handleCompleteGoogleProfileSubmit);
+      card.appendChild(titleG);
+      card.appendChild(descG);
+      card.appendChild(formG);
+      loginWrap.appendChild(card);
+      container.appendChild(loginWrap);
+      setTimeout(function () {
+        var backBtnG = document.getElementById("google-back-btn");
+        if (backBtnG) backBtnG.addEventListener("click", function () { appViewState.pendingGoogleAccount = null; render(); });
       }, 0);
       return;
     }
@@ -862,8 +1006,14 @@
         msBtn.addEventListener("click", handleMicrosoftLogin);
         card.appendChild(msBtn);
       }
+      if (googleReady) {
+        var gWrap = el("div", "google-signin-wrap");
+        gWrap.id = "google-signin-btn-login";
+        card.appendChild(gWrap);
+      }
       loginWrap.appendChild(card);
       container.appendChild(loginWrap);
+      if (googleReady) setTimeout(function () { initGoogleButton("google-signin-btn-login"); }, 0);
       return;
     }
 
@@ -885,6 +1035,13 @@
         msSignup.textContent = "Sign up with Microsoft";
         msSignup.addEventListener("click", handleMicrosoftLogin);
         card.appendChild(msSignup);
+      }
+      if (googleReady) {
+        var gWrapSignup = el("div", "google-signin-wrap");
+        gWrapSignup.id = "google-signin-btn-signup";
+        card.appendChild(gWrapSignup);
+      }
+      if (msalReady || googleReady) {
         var orP = el("p", "muted");
         orP.textContent = "Or with email:";
         card.appendChild(orP);
@@ -903,6 +1060,7 @@
       card.appendChild(signupForm);
       loginWrap.appendChild(card);
       container.appendChild(loginWrap);
+      if (googleReady) setTimeout(function () { initGoogleButton("google-signin-btn-signup"); }, 0);
     }
   }
 

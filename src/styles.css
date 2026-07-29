@@ -512,6 +512,8 @@ body {
   border: 1px solid #2f2f2f !important;
 }
 .ms-signin-btn:hover { background: #3f3f3f !important; border-color: #3f3f3f !important; }
+
+.google-signin-wrap { margin-top: 0.5rem; }
 .ms-signin-btn .ms-icon::before {
   content: "";
   display: inline-block;
