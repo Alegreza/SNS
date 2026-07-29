@@ -835,6 +835,11 @@
     return fmtDate(d);
   }
 
+  var VERIFICATION_METHOD_LABELS = { manual: "Manual", student_id: "Student ID", school_sso: "School SSO" };
+  function prettyVerificationMethod(m) {
+    return VERIFICATION_METHOD_LABELS[m] || m;
+  }
+
   function renderPostCard(post, opts) {
     opts = opts || {};
     var isAdmin = userState.role === "admin";
@@ -1810,7 +1815,7 @@
           tr.id = "admin-user-row-" + u.id;
           tr.setAttribute("data-search", [u.name, u.email, u.role, u.grade, u.verification_method, u.verification_status].join(" ").toLowerCase());
           var statusCls = u.verification_status === "approved" ? "badge-approved" : (u.verification_status === "rejected" ? "badge-rejected" : "badge-pending");
-          tr.innerHTML = "<td>" + esc(u.name) + "</td><td>" + esc(u.email) + "</td><td></td><td></td><td>" + esc(u.verification_method) + "</td><td><span class='verification-badge " + statusCls + "'>" + esc(u.verification_status) + "</span></td><td></td>";
+          tr.innerHTML = "<td>" + esc(u.name) + "</td><td>" + esc(u.email) + "</td><td></td><td></td><td>" + esc(prettyVerificationMethod(u.verification_method)) + "</td><td><span class='verification-badge " + statusCls + "'>" + esc(u.verification_status) + "</span></td><td></td>";
 
           var roleSelect = document.createElement("select");
           roleSelect.className = "admin-inline-select";
