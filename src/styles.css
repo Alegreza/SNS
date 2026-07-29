@@ -275,6 +275,7 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   margin-bottom: 0.5rem;
   overflow: hidden;
 }
@@ -313,6 +314,7 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   padding: 1.1rem 1.25rem;
   margin-bottom: 0.75rem;
 }
@@ -324,6 +326,7 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -541,6 +544,7 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
 }
@@ -798,6 +802,7 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   padding: 2rem 1.75rem;
 }
 

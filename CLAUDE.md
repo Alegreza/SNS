@@ -198,6 +198,7 @@ UPLOAD_DIR=./data/uploads
 - **Empty states**: `renderEmptyState(icon, text)` helper — centered icon + muted text, replacing bare `<p class="muted">No posts yet.</p>` across the main feed, boards, Q&A, and notifications views. Left the small nested "No comments yet." as plain text — a big icon there would look oversized for its context.
 - **Admin Space Assignment cards**: replaced the plain-text teacher list + buttons whose labels literally concatenated ("Mr. Kim Remove") with proper teacher chips (pill + × remove button) and a clearly separated assign row, plus a type badge (CLASS/CLUB/SUBJECT).
 - **Keyboard focus rings**: buttons/links previously relied on the browser's unstyled default focus outline. Added a consistent `:focus-visible` ring using the current accent color. Caught a real contrast bug while testing with actual Tab-key navigation (not just `.focus()`, which doesn't reliably trigger `:focus-visible`): on the navbar itself, an accent-colored ring is invisible against the same-colored accent background — overridden to white specifically for `.top-navbar button/a`.
+- **Card elevation**: the 5 "surface card" containers (`.card`, `.sidebar-section`, `.post-list`, `.composer`, `.login-card`) had a flat border and no shadow at all, despite `--shadow-sm`/`--shadow-md` tokens already existing unused. Added `box-shadow: var(--shadow-sm)` to all 5 for a consistent, subtle lift.
 
 ---
 
