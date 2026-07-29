@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { pool, query, queryOne } = require("../db");
 const { auth } = require("../middleware/auth");
+const { sanitizeText } = require("../sanitize");
 
 const SECTIONS = ["Announcements & Assignments", "Questions", "Anonymous / Vent"];
 const STUDENT_ONLY_SECTIONS = ["Anonymous / Vent"];
@@ -118,7 +119,9 @@ router.get("/posts/feed", auth, async (req, res) => {
 // POST /api/posts
 router.post("/posts", auth, async (req, res) => {
   try {
-    const { spaceId, section, title, content, isAnonymous } = req.body;
+    const { spaceId, section, isAnonymous } = req.body;
+    const title = sanitizeText(req.body.title);
+    const content = sanitizeText(req.body.content);
 
     if (!spaceId || !section || !title || !content) {
       return res.status(400).json({ error: "spaceId, section, title, content required" });

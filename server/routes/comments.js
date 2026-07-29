@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router({ mergeParams: true });
 const { pool, query, queryOne } = require("../db");
 const { auth } = require("../middleware/auth");
+const { sanitizeText } = require("../sanitize");
 
 // GET /api/posts/:id/comments
 router.get("/", auth, async (req, res) => {
@@ -33,9 +34,10 @@ router.post("/", auth, async (req, res) => {
   const client = await pool.connect();
   try {
     const postId = Number(req.params.id);
-    const { content, isAnonymous } = req.body;
+    const { isAnonymous } = req.body;
+    const content = sanitizeText(req.body.content);
 
-    if (!content || !content.trim()) {
+    if (!content) {
       return res.status(400).json({ error: "content required" });
     }
 
@@ -54,7 +56,7 @@ router.post("/", auth, async (req, res) => {
     const commentResult = await client.query(
       `INSERT INTO comments (post_id, author_id, author_name, author_role, is_anonymous, content, author_ip)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [postId, req.user.id, authorName, req.user.role, anonymous, content.trim(), clientIp]
+      [postId, req.user.id, authorName, req.user.role, anonymous, content, clientIp]
     );
     const comment = commentResult.rows[0];
 

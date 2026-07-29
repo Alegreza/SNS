@@ -6,6 +6,7 @@
 require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const path = require("path");
 const rateLimit = require("express-rate-limit");
 const pino = require("pino");
@@ -31,6 +32,32 @@ const app = express();
 
 // Trust Render's proxy so req.ip reflects the real client IP
 app.set("trust proxy", 1);
+
+// CSP: script-src is kept strict (no unsafe-inline/unsafe-eval — that's where real
+// XSS execution risk lives). style-src allows unsafe-inline as a deliberate trade-off:
+// the app sets many dynamic inline styles via element.style.* throughout app.js, and
+// refactoring all of those into stylesheet classes just for this is out of scope —
+// CSS-only injection is a much lower-severity risk than script injection.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://accounts.google.com", "https://alcdn.msauth.net"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https://*.gstatic.com", "https://*.googleusercontent.com"],
+      connectSrc: ["'self'", "https://accounts.google.com"],
+      frameSrc: ["'self'", "https://accounts.google.com", "https://login.microsoftonline.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"]
+    }
+  },
+  // Third-party OAuth scripts (Google GIS, MSAL) aren't COEP-compatible, and MSAL's
+  // login popup relies on window.opener access, which strict same-origin COOP breaks.
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
+}));
 
 const allowedOrigins = [
   "https://cksns.live",
