@@ -16,6 +16,7 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+._*
 
 # IDE
 .idea/
@@ -26,3 +27,6 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# Human-only session logs (may contain internal security details) — never commit
+SESSION_LOG_*.md
