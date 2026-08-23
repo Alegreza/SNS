@@ -9,7 +9,7 @@ if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
 
 module.exports = {
   port: process.env.PORT || 3000,
-  jwtSecret: process.env.JWT_SECRET || "cksns-dev-secret-change-in-production",
+  jwtSecret: process.env.JWT_SECRET || "nextfound-dev-secret-change-in-production",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "30d",
   googleClientId: process.env.GOOGLE_CLIENT_ID || "",
   microsoftClientId: process.env.MICROSOFT_CLIENT_ID || "",

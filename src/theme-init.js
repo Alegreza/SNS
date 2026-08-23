@@ -6,7 +6,7 @@
  */
 (function () {
   try {
-    var stored = localStorage.getItem("cksns_theme");
+    var stored = localStorage.getItem("nextfound_theme");
     if (stored === "dark" || stored === "light") {
       document.documentElement.setAttribute("data-theme", stored);
     }

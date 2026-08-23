@@ -1,4 +1,4 @@
-# CKSNS – Cranbrook School SNS
+# NEXTFOUND – Cranbrook School SNS
 
 A closed, school-only SNS for high school (grades 9–12), live at [cksns.live](https://cksns.live). Sign up with **email** or **username**, plus **Google** or **Microsoft**. School verification: manual (contact admin) or student ID upload. Class/subject boards (per grade) and clubs, each with Announcements & Assignments / Questions / Anonymous & Vent sections — admins can also create boards with fully custom categories.
 

@@ -1,8 +1,43 @@
-# CKSNS — Project Context
+# NEXTFOUND — Project Context
 
-**Project name**: CKSNS (Cranbrook School SNS). "Kobe" is a collaborator's name, not the project name.
+**Project name**: NEXTFOUND (Cranbrook School SNS), formerly **CKSNS** — renamed 2026-08-23. "Kobe" is a collaborator's name, not the project name.
 
 School-only SNS for Cranbrook high school students (grades 9–12). Closed platform: users must be verified before posting.
+
+## ⚠️ Rebrand Status (CKSNS → NEXTFOUND) — READ BEFORE TOUCHING DOMAIN/CORS/OAUTH CONFIG
+
+On 2026-08-23 the project was rebranded from CKSNS to NEXTFOUND. **This was a code/branding-only
+rename — the live domain was deliberately left as `cksns.live` per user decision, not migrated.**
+
+**Renamed (done):** npm package names (`package.json`, `server/package.json`), the dev-fallback JWT
+secret string in `server/config.js`, `localStorage` keys (`cksns_token`→`nextfound_token`,
+`cksns_theme`→`nextfound_theme`, `cksns_accent`→`nextfound_accent` — this signs out every existing
+session on next deploy, same effect as the Phase 6 JWT secret rotation), the UI logo/wordmark text,
+the `<title>` tag, `render.yaml`'s declarative service/DB names (`nextfound`/`nextfound-db` — inert
+either way since this service was never Blueprint-created, see Key Constraints), and all doc
+references *except* the literal domain.
+
+**Deliberately NOT renamed — still `cksns.live` everywhere:** the CORS allowlist in
+`server/index.js`, the domain mentioned in `README.md`, and the Google Cloud Console OAuth
+registration (Authorized JavaScript origins / redirect URIs) — **none of these were touched**,
+because the actual domain hasn't moved. **Do not change any of these to `nextfound.live` unless the
+domain migration below has actually happened first** — doing so would break login/CORS on the real
+live site.
+
+**When the domain migration actually happens, do all of these together (not piecemeal):**
+1. Register `nextfound.live` (confirm TLD — `.live` was just carried over from the old domain, never confirmed as final).
+2. Point DNS at Render the same way `cksns.live` is (Cloudflare in front).
+3. Add `nextfound.live` / `www.nextfound.live` as a custom domain on the Render service.
+4. Update `server/index.js`'s CORS `allowedOrigins` to the new domain (and decide whether to keep `cksns.live` too, during a transition window).
+5. Update Google Cloud Console: Authorized JavaScript origins + redirect URIs → `nextfound.live`.
+6. Update the Microsoft Azure AD app registration's redirect URI(s) the same way.
+7. Update `README.md`'s live links.
+8. Only then flip the CLAUDE.md domain mentions (Tech Stack, Key Constraints, Phase 6 history) to `nextfound.live`.
+
+**Nothing here is urgent** — no external config currently references `nextfound.live`, so there is no
+live-breaking mismatch today. The only thing to double check before deploying the current rename
+commit: confirm `server/index.js`'s CORS list still says `cksns.live` (it does, reverted after the
+initial rename pass) before pushing.
 
 ## Language Rule
 
@@ -12,18 +47,18 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 
 - **Frontend**: Vanilla JS (no build step, IIFE wrapper). Single file `src/app.js`. ES5-compatible for `file://` fallback.
 - **Backend**: Node.js + Express, port 3000
-- **Database**: PostgreSQL via `pg` pool. **Actually hosted on Supabase, not Render** — `render.yaml` still declares an unused Render-managed `cksns-db`; the real `DATABASE_URL` is set directly in Render's dashboard env vars, pointing at Supabase. Don't trust `render.yaml`'s `databases:` block as the source of truth.
-- **Auth**: JWT (localStorage key: `cksns_token`), Google OAuth (live), Microsoft MSAL (Azure AD) with JWKS signature verification
+- **Database**: PostgreSQL via `pg` pool. **Actually hosted on Supabase, not Render** — `render.yaml` still declares an unused Render-managed `nextfound-db`; the real `DATABASE_URL` is set directly in Render's dashboard env vars, pointing at Supabase. Don't trust `render.yaml`'s `databases:` block as the source of truth.
+- **Auth**: JWT (localStorage key: `nextfound_token`), Google OAuth (live), Microsoft MSAL (Azure AD) with JWKS signature verification
 - **Logging**: `pino` + `pino-http` (JSON structured logs on Render stdout)
 - **Security**: `helmet` for CSP + security headers (see `server/index.js` for the exact allowlist); `server/sanitize.js` strips all HTML from post/comment content server-side before storage (isomorphic-dompurify) — this app has no rich-text support, so the policy is "strip everything," not "allow a safe subset"
-- **Deploy**: Render.com via `render.yaml` (web service), custom domain `cksns.live` (name.com → Render, Cloudflare in front). **Free tier** — spins down after ~15 min idle, cold-starts on next request. The Postgres pool has a `connectionTimeoutMillis` so a slow/unreachable DB fails fast (10s) instead of hanging the whole server indefinitely, but the spin-down itself only goes away on a paid plan.
+- **Deploy**: Render.com via `render.yaml` (web service), custom domain `cksns.live` (name.com → Render, Cloudflare in front) — **still the live domain**, see "Rebrand Status" below, do not change this to `nextfound.live` until the domain migration actually happens. **Free tier** — spins down after ~15 min idle, cold-starts on next request. The Postgres pool has a `connectionTimeoutMillis` so a slow/unreachable DB fails fast (10s) instead of hanging the whole server indefinitely, but the spin-down itself only goes away on a paid plan.
 
 ## Project Structure
 
 ```
-01. Kobe/               ← folder name (Kobe = collaborator), project = CKSNS
+01. Kobe/               ← folder name (Kobe = collaborator), project = NEXTFOUND
 ├── index.html          # SPA entry point (Noto Sans KR via Google Fonts)
-├── render.yaml         # Render: web service + PostgreSQL cksns-db
+├── render.yaml         # Render: web service + PostgreSQL nextfound-db
 ├── .env.example        # Full env checklist
 ├── src/
 │   ├── app.js          # Entire frontend (state + UI + event handlers)
@@ -88,7 +123,7 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 - Font: Noto Sans KR via Google Fonts CDN
 - Mobile: sidebar stacks above content
 - **Dark mode**: follows system `prefers-color-scheme` by default; manual toggle in the navbar (🌙/☀️) and in Settings, persisted to `localStorage`. All CSS colors are custom properties (`src/styles.css` `:root`) — any new UI must use tokens, not literal hex, or it won't adapt to dark mode. Native form controls (`<button>`/`<input>`/`<select>`/`<textarea>`) don't inherit `color` from ancestors — always set it explicitly or text becomes invisible in dark mode.
-- **Accent color picker**: Settings > Appearance lets users pick from 6 presets (red/blue/green/purple/orange/teal, each with light+dark variants), applied via inline `--color-primary`/`-hover`/`-light` overrides on `<html>`, persisted to `localStorage` (`cksns_accent`)
+- **Accent color picker**: Settings > Appearance lets users pick from 6 presets (red/blue/green/purple/orange/teal, each with light+dark variants), applied via inline `--color-primary`/`-hover`/`-light` overrides on `<html>`, persisted to `localStorage` (`nextfound_accent`)
 - **Settings tab** (was "Profile"): Account info + Appearance (theme toggle, accent picker)
 
 ## Coding Conventions
@@ -96,7 +131,7 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 - Frontend: no ES modules, IIFE wrapper. `var`/`let`/`const` freely inside.
 - DOM manipulation imperative. `el(tag, cls)` helper creates elements.
 - State: `userState` + `appViewState` inside IIFE.
-- API calls via `apiCall(path, options)` — attaches JWT `cksns_token` header automatically.
+- API calls via `apiCall(path, options)` — attaches JWT `nextfound_token` header automatically.
 - Backend: async/await (`pg` pool). `query`, `queryOne`, `run` helpers in `db.js`.
 - All routes use `auth` middleware. Admin routes additionally use `adminAuth`.
 - JWT payload: `userId`, `id`, `email`, `role`, `grade`, `name`.
@@ -106,13 +141,13 @@ School-only SNS for Cranbrook high school students (grades 9–12). Closed platf
 ## Key Constraints
 
 - No npm build step — frontend files served as-is by Express static middleware.
-- DB: PostgreSQL on Supabase (see Tech Stack note above — not the `render.yaml`-declared `cksns-db`).
+- DB: PostgreSQL on Supabase (see Tech Stack note above — not the `render.yaml`-declared `nextfound-db`).
 - Default admin: email `admin` — password already rotated off the `admin`/`admin` default in production (startup warning prints to Render logs if it's ever still default).
 - Google OAuth Client ID is set in `src/auth-config.js` and must match Render's `GOOGLE_CLIENT_ID` env var exactly, and the origin must be registered in Google Cloud Console (Authorized JavaScript origins + redirect URIs) for `cksns.live`.
 - Microsoft MSAL: JWKS signature verification implemented (`jwks-rsa`). Client ID is set but end-to-end login has not been verified on production yet.
 - `author_ip` is PII — only expose to admin role, never to other users.
 - **`role` at signup must stay restricted to `student`/`teacher`** (`SELF_SIGNUP_ROLES` in `server/routes/auth.js`, all three signup paths). The DB's own `CHECK` constraint allows `'admin'` as a value, so this app-layer allowlist is the only thing preventing self-registered admin accounts — never remove it or trust the DB constraint alone.
-- `server/config.js` throws at boot if `NODE_ENV=production` and `JWT_SECRET` isn't set — this is intentional (a hardcoded fallback secret is committed in this public repo). `render.yaml` sets `NODE_ENV=production`, but that env var only auto-applies on services created via Render Blueprints — if `cksns` was created by manually connecting the repo, dashboard env vars are the actual source of truth, not `render.yaml`.
+- `server/config.js` throws at boot if `NODE_ENV=production` and `JWT_SECRET` isn't set — this is intentional (a hardcoded fallback secret is committed in this public repo). `render.yaml` sets `NODE_ENV=production`, but that env var only auto-applies on services created via Render Blueprints — if `nextfound` was created by manually connecting the repo, dashboard env vars are the actual source of truth, not `render.yaml`.
 - CORS is locked to `https://cksns.live`, `https://www.cksns.live`, `http://localhost:3000` (`server/index.js`) — add new origins there explicitly, don't revert to reflecting all origins.
 
 ## Environment Variables (.env.example)
@@ -156,7 +191,7 @@ UPLOAD_DIR=./data/uploads
 - Startup warning if admin default password is still in use (`bcrypt.compare`)
 
 ### ✅ Phase 4 — Production Readiness [Done]
-- `render.yaml`: PostgreSQL service (`cksns-db`) + `DATABASE_URL` wired
+- `render.yaml`: PostgreSQL service (`nextfound-db`) + `DATABASE_URL` wired
 - DB: SQLite → PostgreSQL migration (data persistence on Render)
 - `trust proxy 1` + X-Forwarded-For IP extraction middleware
 - pino + pino-http structured logging
@@ -171,7 +206,7 @@ UPLOAD_DIR=./data/uploads
 
 ### ✅ Phase 6 — Google OAuth Live + Security Audit [Done, 2026-07-29]
 - **Google Sign-In frontend**: GIS button on login/signup, ID token decode for prefill, new-user profile-completion flow — mirrors the existing Microsoft flow. Backend endpoint already existed; frontend never called it until now.
-- **Domain live**: `cksns.live` connected and serving over HTTPS (Cloudflare in front of Render).
+- **Domain live**: `cksns.live` connected and serving over HTTPS (Cloudflare in front of Render). (Historical note as of Phase 6's original date — renamed everywhere else since; domain itself is still `cksns.live`, see "Rebrand Status" below.)
 - **DB is Supabase**, not the `render.yaml`-declared Render Postgres — see Tech Stack/Key Constraints.
 - **Critical fix**: closed a privilege-escalation hole — `role` was accepted verbatim from signup requests on all 3 auth paths, and the DB `CHECK` constraint permits `'admin'`, so anyone could self-register as admin with no verification. Now allowlisted to `student`/`teacher` at the app layer.
 - **Critical fix**: production had been silently running on the hardcoded fallback `JWT_SECRET` committed in this repo (never actually set on Render). Real secret now set; server refuses to boot in production without one.
@@ -201,6 +236,9 @@ UPLOAD_DIR=./data/uploads
 - **Card elevation**: the 5 "surface card" containers (`.card`, `.sidebar-section`, `.post-list`, `.composer`, `.login-card`) had a flat border and no shadow at all, despite `--shadow-sm`/`--shadow-md` tokens already existing unused. Added `box-shadow: var(--shadow-sm)` to all 5 for a consistent, subtle lift.
 - **Admin table copy**: `verification_method` was rendered as its raw DB enum value (`student_id`, `school_sso`) instead of a readable label. New `prettyVerificationMethod()` in `app.js`.
 - **Custom category tab overflow bug**: a board with several/long custom categories (from the create-board feature in Phase 7) made `.section-tabs` wrap onto multiple uneven lines. Same fix pattern as the mobile navbar — scrolls horizontally instead of wrapping. Found by actually testing the custom-categories feature with realistic long names, not just the 3 short defaults.
+
+### ✅ Phase 10 — Rebrand to NEXTFOUND [Done, 2026-08-23]
+- **Rebrand CKSNS → NEXTFOUND**: case-preserving rename (`CKSNS`→`NEXTFOUND`, `cksns`→`nextfound`) across the whole codebase — npm package names, the dev-fallback JWT secret string, `localStorage` keys (`cksns_token`/`cksns_theme`/`cksns_accent`→`nextfound_*`, which signs out every existing session on next deploy), UI logo/wordmark, `<title>`, `render.yaml`'s declarative service/DB names, and all docs. **Domain deliberately excluded** — user chose to stay on `cksns.live` for now, so the CORS allowlist (`server/index.js`), `README.md` links, and CLAUDE.md's domain mentions were reverted back to `cksns.live` after the initial pass. Full status and a migration checklist for whenever the domain does move: see "⚠️ Rebrand Status" section near the top of this file.
 
 ---
 

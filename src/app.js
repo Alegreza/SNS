@@ -20,7 +20,7 @@
   const API = (window.API_BASE || "") + "/api";
 
   function apiCall(path, options) {
-    var token = localStorage.getItem("cksns_token");
+    var token = localStorage.getItem("nextfound_token");
     var headers = options && options.headers || {};
     if (token) headers["Authorization"] = "Bearer " + token;
     if (options && options.body && typeof options.body === "object" && !(options.body instanceof FormData)) {
@@ -48,7 +48,7 @@
   }
 
   function restoreSession() {
-    var token = localStorage.getItem("cksns_token");
+    var token = localStorage.getItem("nextfound_token");
     if (!token) return Promise.resolve(false);
     return apiCall("/auth/me").then(function (user) {
       loginFromApiUser(user);
@@ -57,7 +57,7 @@
       startNotifPolling();
       return true;
     }).catch(function () {
-      localStorage.removeItem("cksns_token");
+      localStorage.removeItem("nextfound_token");
       return false;
     });
   }
@@ -131,7 +131,7 @@
   }
 
   function logout() {
-    localStorage.removeItem("cksns_token");
+    localStorage.removeItem("nextfound_token");
     userState.isAuthenticated = false;
     userState.name = "";
     userState.role = null;
@@ -318,7 +318,7 @@
     }
   }
 
-  var THEME_STORAGE_KEY = "cksns_theme";
+  var THEME_STORAGE_KEY = "nextfound_theme";
 
   function getStoredTheme() {
     try { return localStorage.getItem(THEME_STORAGE_KEY); } catch (e) { return null; }
@@ -352,7 +352,7 @@
     render();
   }
 
-  var ACCENT_STORAGE_KEY = "cksns_accent";
+  var ACCENT_STORAGE_KEY = "nextfound_accent";
   var ACCENT_PRESETS = {
     red:    { label: "Red",    light: { primary: "#e53935", hover: "#c62828", light: "#fdecea" },              dark: { primary: "#ef5350", hover: "#e57373", light: "rgba(239,83,80,0.16)" } },
     blue:   { label: "Blue",   light: { primary: "#1565c0", hover: "#0d47a1", light: "#e3f2fd" },              dark: { primary: "#64b5f6", hover: "#90caf9", light: "rgba(100,181,246,0.18)" } },
@@ -424,7 +424,7 @@
 
     apiCall("/auth/login", { method: "POST", body: { login: login, password: password } })
       .then(function (res) {
-        localStorage.setItem("cksns_token", res.token);
+        localStorage.setItem("nextfound_token", res.token);
         loginFromApiUser(res.user);
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
@@ -484,7 +484,7 @@
 
     fetch(API + "/auth/signup", {
       method: "POST",
-      headers: { "Authorization": localStorage.getItem("cksns_token") ? "Bearer " + localStorage.getItem("cksns_token") : "" },
+      headers: { "Authorization": localStorage.getItem("nextfound_token") ? "Bearer " + localStorage.getItem("nextfound_token") : "" },
       body: body
     })
       .then(function (r) {
@@ -492,7 +492,7 @@
         return r.json();
       })
       .then(function (res) {
-        localStorage.setItem("cksns_token", res.token);
+        localStorage.setItem("nextfound_token", res.token);
         loginFromApiUser(res.user);
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
@@ -555,7 +555,7 @@
       }
       apiCall("/auth/microsoft", { method: "POST", body: { access_token: token } })
         .then(function (res) {
-          localStorage.setItem("cksns_token", res.token);
+          localStorage.setItem("nextfound_token", res.token);
           loginFromApiUser(res.user);
           appViewState.authScreen = "choose";
           appViewState.activeTab = "home";
@@ -629,7 +629,7 @@
         return r.json();
       })
       .then(function (res) {
-        localStorage.setItem("cksns_token", res.token);
+        localStorage.setItem("nextfound_token", res.token);
         loginFromApiUser(res.user);
         appViewState.pendingMsAccount = null;
         appViewState.authScreen = "choose";
@@ -666,7 +666,7 @@
     var claims = decodeJwtPayload(idToken);
     apiCall("/auth/google", { method: "POST", body: { id_token: idToken } })
       .then(function (res) {
-        localStorage.setItem("cksns_token", res.token);
+        localStorage.setItem("nextfound_token", res.token);
         loginFromApiUser(res.user);
         appViewState.authScreen = "choose";
         appViewState.activeTab = "home";
@@ -733,7 +733,7 @@
         return r.json();
       })
       .then(function (res) {
-        localStorage.setItem("cksns_token", res.token);
+        localStorage.setItem("nextfound_token", res.token);
         loginFromApiUser(res.user);
         appViewState.pendingGoogleAccount = null;
         appViewState.authScreen = "choose";
@@ -1004,7 +1004,7 @@
     var nav = el("nav", "top-navbar");
 
     var logo = el("div", "navbar-logo");
-    logo.innerHTML = "CKSNS<span>Cranbrook School</span>";
+    logo.innerHTML = "NEXTFOUND<span>Cranbrook School</span>";
     logo.addEventListener("click", function () { setActiveTab("home"); });
     nav.appendChild(logo);
 
@@ -1103,7 +1103,7 @@
     var page = el("div", "auth-page");
     var brand = el("div", "auth-brand");
     brand.innerHTML =
-      '<div class="auth-brand-logo">CKSNS</div>' +
+      '<div class="auth-brand-logo">NEXTFOUND</div>' +
       '<p class="auth-brand-tagline">A quiet space for Cranbrook students only — class boards, subject boards, clubs, and a place to vent anonymously.</p>' +
       '<div class="auth-brand-features">' +
         '<div class="auth-brand-feature"><span class="auth-brand-feature-dot"></span>Class &amp; subject spaces by grade</div>' +
