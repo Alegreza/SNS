@@ -86,7 +86,7 @@ initial rename pass) before pushing.
 - `users` — id, email, username, name, password_hash, role, grade, verification_status, ...
 - `user_providers` — OAuth provider links (google, microsoft, email)
 - `user_spaces` — teacher→space assignment (students filtered by grade logic in routes)
-- `spaces` — id(text), type(class|subject|club), name, grade
+- `spaces` — id(text), type(class|subject|club), name, grade, sections (JSON text, NULL=defaults), post_template (text, NULL=none)
 - `posts` — id, space_id, section, title, content, author_id, author_name, author_role, is_anonymous, **author_ip**, created_at
 - `comments` — id, post_id, author_id, author_name, author_role, is_anonymous, content, **author_ip**, created_at
 - `notifications` — id, user_id, type, post_id, actor_name, message, is_read, created_at
@@ -95,6 +95,7 @@ initial rename pass) before pushing.
 ## Core Features (Implemented)
 
 - **Spaces**: Class (per grade), Subject (per grade), Club (all grades). Admins can create new boards ("+ Create board" in Admin > Space Assignment), with an optional fully custom list of categories per board (stored as JSON in `spaces.sections`; NULL = the 3 app defaults). `POST /api/posts`'s section validation checks against the specific space's actual sections, not a hardcoded list.
+- **Post templates**: each board optionally has one admin-editable default template (`spaces.post_template`, plain text, NULL = none). Set at board creation or edited anytime via a "Post template" field on that board's card in Admin > Space Assignment (`PATCH /api/admin/spaces/:spaceId/template`). When a board has a template, its composer shows a "Use Template" button that fills the content field (confirms before overwriting a non-empty draft). Sanitized server-side the same way post content is (`sanitizeText`). Scope is per-space, single template — no per-section or multi-template library.
 - **Sections per space**: Announcements & Assignments / Questions / Anonymous & Vent by default, or custom per board (see above)
 - **Access control**:
   - Students: grade-matched class/subject spaces + all clubs
@@ -239,6 +240,9 @@ UPLOAD_DIR=./data/uploads
 
 ### ✅ Phase 10 — Rebrand to NEXTFOUND [Done, 2026-08-23]
 - **Rebrand CKSNS → NEXTFOUND**: case-preserving rename (`CKSNS`→`NEXTFOUND`, `cksns`→`nextfound`) across the whole codebase — npm package names, the dev-fallback JWT secret string, `localStorage` keys (`cksns_token`/`cksns_theme`/`cksns_accent`→`nextfound_*`, which signs out every existing session on next deploy), UI logo/wordmark, `<title>`, `render.yaml`'s declarative service/DB names, and all docs. **Domain deliberately excluded** — user chose to stay on `cksns.live` for now, so the CORS allowlist (`server/index.js`), `README.md` links, and CLAUDE.md's domain mentions were reverted back to `cksns.live` after the initial pass. Full status and a migration checklist for whenever the domain does move: see "⚠️ Rebrand Status" section near the top of this file.
+
+### ✅ Phase 11 — Post Templates [Done, 2026-08-23]
+- New `spaces.post_template` column (nullable text). Admin sets/edits it per board — either at creation time (new "Post template" field on the create-board form) or anytime after via a "Post template" textarea + Save button added to each board's card in Admin > Space Assignment (`PATCH /api/admin/spaces/:spaceId/template`, sanitized with `sanitizeText`). When a board has one set, its composer shows a "Use Template" button that fills the content field, confirming first if the writer already has a non-empty draft. Scope decided with the user: per-space (not global), single default template (not a named library), content-only (title is always typed fresh).
 
 ---
 

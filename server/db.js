@@ -129,6 +129,9 @@ async function initDb() {
   // sections: JSON-stringified array of custom category names for this board.
   // NULL means "use the app's default sections" (Announcements & Assignments / Questions / Anonymous & Vent).
   await pool.query(`ALTER TABLE spaces ADD COLUMN IF NOT EXISTS sections TEXT`);
+  // post_template: admin-editable default post content for this board's composer.
+  // NULL means no template configured — the composer shows no "Use Template" button.
+  await pool.query(`ALTER TABLE spaces ADD COLUMN IF NOT EXISTS post_template TEXT`);
 
   // Seed default spaces
   const defaultSpaces = [

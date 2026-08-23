@@ -8,6 +8,7 @@ const router = express.Router();
 const { pool, query, queryOne } = require("../db");
 const { auth } = require("../middleware/auth");
 const { adminAuth } = require("../middleware/adminAuth");
+const { sanitizeText } = require("../sanitize");
 
 router.use(auth, adminAuth);
 
@@ -183,7 +184,7 @@ router.get("/spaces", async (req, res) => {
 // POST /api/admin/spaces — create a new board, optionally with custom categories
 router.post("/spaces", async (req, res) => {
   try {
-    const { name, type, grade, sections } = req.body;
+    const { name, type, grade, sections, postTemplate } = req.body;
     if (!name || !String(name).trim()) return res.status(400).json({ error: "name is required" });
     if (!["class", "subject", "club"].includes(type)) {
       return res.status(400).json({ error: "type must be one of: class, subject, club" });
@@ -204,6 +205,8 @@ router.post("/spaces", async (req, res) => {
     }
     const sectionsVal = cleanedSections ? JSON.stringify(cleanedSections) : null;
 
+    const templateVal = postTemplate != null ? sanitizeText(postTemplate).slice(0, 5000) || null : null;
+
     const trimmedName = String(name).trim();
     let id = slugifyBoardName(trimmedName);
     let suffix = 1;
@@ -213,14 +216,33 @@ router.post("/spaces", async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO spaces (id, type, name, grade, sections) VALUES ($1, $2, $3, $4, $5)",
-      [id, type, trimmedName, gradeVal, sectionsVal]
+      "INSERT INTO spaces (id, type, name, grade, sections, post_template) VALUES ($1, $2, $3, $4, $5, $6)",
+      [id, type, trimmedName, gradeVal, sectionsVal, templateVal]
     );
     req.log && req.log.info({ event: "admin_create_space", spaceId: id, type, grade: gradeVal, byAdminId: req.user.id });
-    res.status(201).json({ id, type, name: trimmedName, grade: gradeVal, sections: cleanedSections || DEFAULT_SECTIONS, teachers: [] });
+    res.status(201).json({ id, type, name: trimmedName, grade: gradeVal, sections: cleanedSections || DEFAULT_SECTIONS, post_template: templateVal, teachers: [] });
   } catch (e) {
     req.log && req.log.error(e);
     res.status(500).json({ error: "Failed to create board" });
+  }
+});
+
+// PATCH /api/admin/spaces/:spaceId/template — set or clear this board's default post template
+router.patch("/spaces/:spaceId/template", async (req, res) => {
+  try {
+    const { spaceId } = req.params;
+    const space = await queryOne("SELECT id FROM spaces WHERE id = $1", [spaceId]);
+    if (!space) return res.status(404).json({ error: "Board not found" });
+
+    const { template } = req.body;
+    const templateVal = template != null ? sanitizeText(template).slice(0, 5000) || null : null;
+
+    await pool.query("UPDATE spaces SET post_template = $1 WHERE id = $2", [templateVal, spaceId]);
+    req.log && req.log.info({ event: "admin_set_space_template", spaceId, hasTemplate: !!templateVal, byAdminId: req.user.id });
+    res.json({ ok: true, id: spaceId, post_template: templateVal });
+  } catch (e) {
+    req.log && req.log.error(e);
+    res.status(500).json({ error: "Failed to update template" });
   }
 });
 

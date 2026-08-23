@@ -1396,12 +1396,26 @@
         composerTitle.textContent = activeSpace.name + " · " + appViewState.activeSection;
         composer.appendChild(composerTitle);
         var form = el("form");
+        var hasTemplate = !!(activeSpace.post_template && activeSpace.post_template.trim());
         form.innerHTML =
           '<div class="form-field" style="margin-bottom:0.5rem"><input name="title" placeholder="Title" required /></div>' +
           '<div class="form-field"><textarea name="content" rows="3" placeholder="Write your post…" required></textarea></div>' +
+          (hasTemplate ? '<button type="button" class="ghost-button tiny" data-action="use-template" style="margin-top:0.4rem">Use Template</button>' : '') +
           '<div class="composer-row"><label class="checkbox-inline"><input type="checkbox" name="isAnonymous" ' + (defAnon ? "checked" : "") + ' /> Anonymous</label>' +
           '<button type="submit" class="primary-button small">Reply</button></div>';
         form.addEventListener("submit", handleCreatePost);
+        if (hasTemplate) {
+          var useTemplateBtn = form.querySelector('[data-action="use-template"]');
+          useTemplateBtn.addEventListener("click", function () {
+            var textarea = form.elements["content"];
+            var draft = textarea.value.trim();
+            if (draft && draft !== activeSpace.post_template.trim()) {
+              if (!confirm("Replace your current draft with this board's template?")) return;
+            }
+            textarea.value = activeSpace.post_template;
+            textarea.focus();
+          });
+        }
         composer.appendChild(form);
         mainEl.appendChild(composer);
       } else if (userState.isAuthenticated && !canUserPostInSection(appViewState.activeSection)) {
@@ -1696,6 +1710,12 @@
     catField.appendChild(addCatBtn);
     form.appendChild(catField);
 
+    var templateField = el("div", "form-field");
+    templateField.innerHTML =
+      '<label for="board-template">Post template (optional)</label>' +
+      '<textarea id="board-template" name="postTemplate" rows="3" placeholder="Pre-filled text writers can start from — leave blank for none"></textarea>';
+    form.appendChild(templateField);
+
     var actions = el("div", "form-actions");
     var submitBtn = el("button", "primary-button");
     submitBtn.type = "submit";
@@ -1725,10 +1745,12 @@
         return;
       }
 
+      var postTemplate = form.elements["postTemplate"].value.trim();
+
       submitBtn.disabled = true;
       apiCall("/admin/spaces", {
         method: "POST",
-        body: { name: name, type: type, grade: type === "club" ? null : grade, sections: sections }
+        body: { name: name, type: type, grade: type === "club" ? null : grade, sections: sections, postTemplate: postTemplate || null }
       }).then(function () {
         appViewState.showCreateBoardForm = false;
         render();
@@ -2022,6 +2044,38 @@
           assignRow.appendChild(sel);
           assignRow.appendChild(assignBtn);
           row.appendChild(assignRow);
+
+          var templateRow = el("div", "space-template-row");
+          var templateLabel = document.createElement("label");
+          templateLabel.textContent = "Post template";
+          templateLabel.setAttribute("for", "template-" + sp.id);
+          templateRow.appendChild(templateLabel);
+          var templateInput = document.createElement("textarea");
+          templateInput.id = "template-" + sp.id;
+          templateInput.rows = 2;
+          templateInput.placeholder = "No template — writers won't see a “Use Template” button";
+          templateInput.value = sp.post_template || "";
+          templateRow.appendChild(templateInput);
+          var templateSaveBtn = el("button", "ghost-button small");
+          templateSaveBtn.type = "button";
+          templateSaveBtn.textContent = "Save template";
+          templateSaveBtn.addEventListener("click", function () {
+            var val = templateInput.value.trim();
+            templateSaveBtn.disabled = true;
+            apiCall("/admin/spaces/" + sp.id + "/template", {
+              method: "PATCH",
+              body: { template: val || null }
+            }).then(function () {
+              templateSaveBtn.disabled = false;
+              templateSaveBtn.textContent = "Saved ✓";
+              setTimeout(function () { templateSaveBtn.textContent = "Save template"; }, 1500);
+            }).catch(function (e) {
+              templateSaveBtn.disabled = false;
+              alert(e.message || "Failed to save template");
+            });
+          });
+          templateRow.appendChild(templateSaveBtn);
+          row.appendChild(templateRow);
 
           spacesWrap.appendChild(row);
         });
